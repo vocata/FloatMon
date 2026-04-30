@@ -5,6 +5,7 @@ struct AppProcess: Identifiable {
     let id: pid_t
     let name: String
     let bundleIdentifier: String?
+    let bundleURL: URL?
     let icon: NSImage?
     let cpuPercent: Double
     let memoryBytes: Int64

@@ -26,6 +26,7 @@ struct ProcessSampler {
                 id: app.pid,
                 name: app.name,
                 bundleIdentifier: app.bundleIdentifier,
+                bundleURL: app.bundleURL,
                 icon: app.icon,
                 cpuPercent: metrics.cpu,
                 memoryBytes: metrics.rssBytes,
@@ -48,6 +49,7 @@ private struct AppSnapshot {
     let pid: pid_t
     let name: String
     let bundleIdentifier: String?
+    let bundleURL: URL?
     let icon: NSImage?
     let isActive: Bool
 
@@ -55,6 +57,7 @@ private struct AppSnapshot {
         pid = app.processIdentifier
         name = app.localizedName ?? app.bundleIdentifier ?? "Unknown"
         bundleIdentifier = app.bundleIdentifier
+        bundleURL = app.bundleURL
         icon = app.icon
         isActive = app.isActive
     }

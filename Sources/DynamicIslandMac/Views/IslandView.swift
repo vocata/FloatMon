@@ -5,9 +5,14 @@ struct IslandView: View {
     @State var store: ProcessStore
     @State private var expanded = false
     @State private var sortMode: ProcessSortMode = .cpu
+    @State private var pendingForceQuitApp: AppProcess?
 
     private var activeApp: AppProcess? {
         store.apps.first(where: \.isActive) ?? store.apps.first
+    }
+
+    private var islandContentSize: CGSize {
+        expanded ? CGSize(width: 520, height: 390) : CGSize(width: 320, height: 54)
     }
 
     var body: some View {
@@ -31,11 +36,17 @@ struct IslandView: View {
                     .overlay(.white.opacity(0.12))
                     .padding(.horizontal, 18)
 
-                ExpandedProcessList(apps: store.apps, sortMode: $sortMode)
+                ExpandedProcessList(
+                    apps: store.apps,
+                    sortMode: $sortMode,
+                    activate: activateApp,
+                    requestForceQuit: { pendingForceQuitApp = $0 }
+                )
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(width: islandContentSize.width, height: islandContentSize.height, alignment: .top)
+        .clipped()
         .background {
             RoundedRectangle(cornerRadius: expanded ? 28 : 27, style: .continuous)
                 .fill(.black.opacity(0.92))
@@ -46,9 +57,28 @@ struct IslandView: View {
         }
         .foregroundStyle(.white)
         .shadow(color: .black.opacity(expanded ? 0.34 : 0.2), radius: expanded ? 24 : 12, y: 10)
-        .padding(.horizontal, 6)
-        .padding(.top, 2)
-        .padding(.bottom, 6)
+        .alert(
+            "Force Quit \(pendingForceQuitApp?.name ?? "App")?",
+            isPresented: Binding(
+                get: { pendingForceQuitApp != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingForceQuitApp = nil
+                    }
+                }
+            ),
+            presenting: pendingForceQuitApp
+        ) { app in
+            Button("Cancel", role: .cancel) {
+                pendingForceQuitApp = nil
+            }
+            Button("Force Quit", role: .destructive) {
+                forceQuitApp(app)
+                pendingForceQuitApp = nil
+            }
+        } message: { app in
+            Text("This will immediately terminate \(app.name). Unsaved changes may be lost.")
+        }
     }
 
     private var collapsedContent: some View {
@@ -79,6 +109,7 @@ struct IslandView: View {
                 .foregroundStyle(.white.opacity(0.58))
                 .frame(width: 24, height: 24)
         }
+        .frame(height: 54, alignment: .center)
         .padding(.leading, 16)
         .padding(.trailing, 13)
         .contentShape(Rectangle())
@@ -86,6 +117,47 @@ struct IslandView: View {
 
     private var currentPanel: IslandWindow? {
         NSApp.windows.first { $0 is IslandWindow } as? IslandWindow
+    }
+
+    private func activateApp(_ app: AppProcess) {
+        if let runningApp = NSRunningApplication(processIdentifier: app.id) {
+            runningApp.unhide()
+            runningApp.activate(options: [.activateAllWindows])
+        }
+
+        guard let bundleURL = app.bundleURL ?? bundleURL(for: app) else {
+            store.refresh()
+            return
+        }
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { _, _ in
+            Task { @MainActor in
+                store.refresh()
+            }
+        }
+    }
+
+    private func bundleURL(for app: AppProcess) -> URL? {
+        guard let bundleIdentifier = app.bundleIdentifier else {
+            return nil
+        }
+
+        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+    }
+
+    private func forceQuitApp(_ app: AppProcess) {
+        guard let runningApp = NSRunningApplication(processIdentifier: app.id) else {
+            store.refresh()
+            return
+        }
+
+        runningApp.forceTerminate()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            store.refresh()
+        }
     }
 }
 
@@ -110,6 +182,8 @@ private struct CameraCapsule: View {
 private struct ExpandedProcessList: View {
     let apps: [AppProcess]
     @Binding var sortMode: ProcessSortMode
+    let activate: (AppProcess) -> Void
+    let requestForceQuit: (AppProcess) -> Void
 
     private var sortedApps: [AppProcess] {
         sortMode.sorted(apps)
@@ -132,7 +206,11 @@ private struct ExpandedProcessList: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(sortedApps) { app in
-                        ProcessRow(app: app)
+                        ProcessRow(
+                            app: app,
+                            activate: { activate(app) },
+                            requestForceQuit: { requestForceQuit(app) }
+                        )
                     }
                 }
                 .animation(.spring(response: 0.42, dampingFraction: 0.9), value: sortMode)
@@ -202,6 +280,9 @@ private struct SortModeControl: View {
 
 private struct ProcessRow: View {
     let app: AppProcess
+    let activate: () -> Void
+    let requestForceQuit: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -237,13 +318,45 @@ private struct ProcessRow: View {
             }
             .monospacedDigit()
             .frame(width: 86, alignment: .trailing)
+
+            Button {
+                requestForceQuit()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(isHovering ? 0.86 : 0.56))
+                    .frame(width: 24, height: 24)
+                    .background {
+                        Circle()
+                            .fill(.white.opacity(isHovering ? 0.14 : 0.08))
+                    }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .help("Force quit \(app.name)")
         }
         .padding(.horizontal, 12)
         .frame(height: 52)
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(app.isActive ? .white.opacity(0.14) : .white.opacity(0.07))
+                .fill(rowBackground)
         }
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture(count: 2, perform: activate)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+        .help("Double-click to open \(app.name)")
+    }
+
+    private var rowBackground: Color {
+        if app.isActive {
+            return .white.opacity(isHovering ? 0.18 : 0.14)
+        }
+
+        return .white.opacity(isHovering ? 0.11 : 0.07)
     }
 }
 

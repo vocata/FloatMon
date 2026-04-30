@@ -23,8 +23,14 @@ final class IslandWindow: NSPanel {
         isMovableByWindowBackground = false
         acceptsMouseMovedEvents = true
 
-        contentView = NSHostingView(rootView: IslandView(store: processStore))
-        contentView?.wantsLayer = true
+        let hostingView = NSHostingView(rootView: IslandView(store: processStore))
+        if #available(macOS 13.0, *) {
+            hostingView.sizingOptions = []
+        }
+        hostingView.frame = contentRect(forFrameRect: frame)
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.wantsLayer = true
+        contentView = hostingView
     }
 
     func show() {
@@ -48,6 +54,6 @@ final class IslandWindow: NSPanel {
         let cameraY = frame.maxY - menuBarHeight - height - topInset
         let cameraX = frame.midX - width / 2
 
-        setFrame(NSRect(x: cameraX, y: cameraY, width: width, height: height), display: true, animate: true)
+        setFrame(NSRect(x: cameraX, y: cameraY, width: width, height: height), display: true, animate: false)
     }
 }
