@@ -6,6 +6,7 @@ struct IslandView: View {
     @State private var expanded = false
     @State private var sortMode: ProcessSortMode = .cpu
     @State private var pendingForceQuitApp: AppProcess?
+    @State private var focusError: String?
 
     private var activeApp: AppProcess? {
         store.apps.first(where: \.isActive) ?? store.apps.first
@@ -40,6 +41,7 @@ struct IslandView: View {
                     apps: store.apps,
                     sortMode: $sortMode,
                     activate: activateApp,
+                    focusWindow: focusWindow,
                     requestForceQuit: { pendingForceQuitApp = $0 }
                 )
                     .transition(.opacity.combined(with: .move(edge: .top)))
@@ -78,6 +80,27 @@ struct IslandView: View {
             }
         } message: { app in
             Text("This will immediately terminate \(app.name). Unsaved changes may be lost.")
+        }
+        .alert(
+            "Precise Window Focus Needs Permission",
+            isPresented: Binding(
+                get: { focusError != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        focusError = nil
+                    }
+                }
+            )
+        ) {
+            Button("Open Settings") {
+                openAccessibilitySettings()
+                focusError = nil
+            }
+            Button("OK", role: .cancel) {
+                focusError = nil
+            }
+        } message: {
+            Text(focusError ?? "")
         }
     }
 
@@ -159,6 +182,30 @@ struct IslandView: View {
             store.refresh()
         }
     }
+
+    private func focusWindow(_ window: AppWindowInfo, in app: AppProcess) {
+        WindowFocusService.activate(app: app)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            let result = WindowFocusService.focus(window: window, in: app)
+            switch result {
+            case .success:
+                break
+            case .accessibilityPermissionRequired:
+                focusError = "macOS requires Accessibility permission to jump to a specific window inside \(app.name). If you already enabled it, quit DynamicIslandMac and launch the existing app again without rebuilding so macOS rechecks the same signed bundle."
+            case .windowNotFound:
+                focusError = "The target window could not be found. Refresh the list and try again."
+            }
+        }
+    }
+
+    private func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+    }
 }
 
 private struct CameraCapsule: View {
@@ -183,7 +230,9 @@ private struct ExpandedProcessList: View {
     let apps: [AppProcess]
     @Binding var sortMode: ProcessSortMode
     let activate: (AppProcess) -> Void
+    let focusWindow: (AppWindowInfo, AppProcess) -> Void
     let requestForceQuit: (AppProcess) -> Void
+    @State private var expandedAppIDs: Set<pid_t> = []
 
     private var sortedApps: [AppProcess] {
         sortMode.sorted(apps)
@@ -206,18 +255,44 @@ private struct ExpandedProcessList: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(sortedApps) { app in
-                        ProcessRow(
-                            app: app,
-                            activate: { activate(app) },
-                            requestForceQuit: { requestForceQuit(app) }
-                        )
+                        VStack(spacing: 4) {
+                            ProcessRow(
+                                app: app,
+                                isExpanded: expandedAppIDs.contains(app.id),
+                                toggleWindows: { toggleWindows(for: app) },
+                                activate: { activate(app) },
+                                requestForceQuit: { requestForceQuit(app) }
+                            )
+
+                            if expandedAppIDs.contains(app.id) {
+                                WindowList(
+                                    windows: app.windows,
+                                    appIcon: app.icon,
+                                    focusWindow: {
+                                        focusWindow($0, app)
+                                    }
+                                )
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                        }
                     }
                 }
                 .animation(.spring(response: 0.42, dampingFraction: 0.9), value: sortMode)
+                .animation(.spring(response: 0.28, dampingFraction: 0.9), value: expandedAppIDs)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 16)
             }
             .scrollIndicators(.automatic)
+        }
+    }
+
+    private func toggleWindows(for app: AppProcess) {
+        guard !app.windows.isEmpty else { return }
+
+        if expandedAppIDs.contains(app.id) {
+            expandedAppIDs.remove(app.id)
+        } else {
+            expandedAppIDs.insert(app.id)
         }
     }
 }
@@ -280,6 +355,8 @@ private struct SortModeControl: View {
 
 private struct ProcessRow: View {
     let app: AppProcess
+    let isExpanded: Bool
+    let toggleWindows: () -> Void
     let activate: () -> Void
     let requestForceQuit: () -> Void
     @State private var isHovering = false
@@ -319,6 +396,22 @@ private struct ProcessRow: View {
             .monospacedDigit()
             .frame(width: 86, alignment: .trailing)
 
+            if !app.windows.isEmpty {
+                HStack(spacing: 3) {
+                    Text("\(app.windows.count)")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .foregroundStyle(.white.opacity(0.56))
+                .frame(width: 30, alignment: .center)
+            } else {
+                Color.clear
+                    .frame(width: 30)
+            }
+
             Button {
                 requestForceQuit()
             } label: {
@@ -342,13 +435,14 @@ private struct ProcessRow: View {
                 .fill(rowBackground)
         }
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture(perform: toggleWindows)
         .onTapGesture(count: 2, perform: activate)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) {
                 isHovering = hovering
             }
         }
-        .help("Double-click to open \(app.name)")
+        .help(app.windows.isEmpty ? "Double-click to open \(app.name)" : "Click to show windows, double-click to open \(app.name)")
     }
 
     private var rowBackground: Color {
@@ -357,6 +451,65 @@ private struct ProcessRow: View {
         }
 
         return .white.opacity(isHovering ? 0.11 : 0.07)
+    }
+}
+
+private struct WindowList: View {
+    let windows: [AppWindowInfo]
+    let appIcon: NSImage?
+    let focusWindow: (AppWindowInfo) -> Void
+    @State private var hoveringWindowID: Int?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(.white.opacity(0.14))
+                .frame(width: 2)
+                .padding(.top, 4)
+                .padding(.bottom, 6)
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(windows) { window in
+                    HStack(spacing: 8) {
+                        AppIconView(image: appIcon, size: 16)
+
+                        Text(window.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.72))
+                            .lineLimit(1)
+
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: 28)
+                    .padding(.leading, 10)
+                    .padding(.trailing, 12)
+                    .background {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(backgroundOpacity(for: window))
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .onTapGesture(count: 2) {
+                        focusWindow(window)
+                    }
+                    .onHover { hovering in
+                        withAnimation(.easeOut(duration: 0.12)) {
+                            hoveringWindowID = hovering ? window.id : nil
+                        }
+                    }
+                    .help("Double-click to show \(window.title)")
+                }
+            }
+        }
+        .padding(.leading, 28)
+        .padding(.trailing, 46)
+    }
+
+    private func backgroundOpacity(for window: AppWindowInfo) -> Color {
+        if hoveringWindowID == window.id {
+            return .white.opacity(0.075)
+        }
+
+        return .white.opacity(0.035)
     }
 }
 

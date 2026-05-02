@@ -41,6 +41,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+
 /usr/bin/open -n "$APP_BUNDLE"
 
 case "${1:-}" in

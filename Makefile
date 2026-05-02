@@ -1,6 +1,6 @@
 APP_NAME := DynamicIslandMac
 
-.PHONY: build run verify logs clean stop quit status
+.PHONY: build run verify launch launch-verify logs clean stop quit status
 
 build:
 	swift build
@@ -10,6 +10,12 @@ run:
 
 verify:
 	./script/build_and_run.sh --verify
+
+launch:
+	./script/launch.sh
+
+launch-verify:
+	./script/launch.sh --verify
 
 logs:
 	./script/build_and_run.sh --logs

@@ -10,4 +10,5 @@ struct AppProcess: Identifiable {
     let cpuPercent: Double
     let memoryBytes: Int64
     let isActive: Bool
+    let windows: [AppWindowInfo]
 }

@@ -34,16 +34,16 @@ final class IslandWindow: NSPanel {
     }
 
     func show() {
-        positionForCurrentScreen(collapsed: true)
+        positionForPrimaryScreen(collapsed: true)
         orderFrontRegardless()
     }
 
     func resize(expanded: Bool) {
-        positionForCurrentScreen(collapsed: !expanded)
+        positionForPrimaryScreen(collapsed: !expanded)
     }
 
-    private func positionForCurrentScreen(collapsed: Bool) {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+    private func positionForPrimaryScreen(collapsed: Bool) {
+        guard let screen = NSScreen.screens.first else { return }
 
         let width: CGFloat = collapsed ? 320 : 520
         let height: CGFloat = collapsed ? 54 : 390

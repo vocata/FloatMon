@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Foundation
 
 struct ProcessSampler {
@@ -19,6 +20,7 @@ struct ProcessSampler {
         let metricsByPID = await Task.detached(priority: .utility) {
             metrics(for: pids)
         }.value
+        let windowsByPID = windowInfoByPID(for: snapshots)
 
         return snapshots.map { app in
             let metrics = metricsByPID[app.pid] ?? .empty
@@ -30,7 +32,8 @@ struct ProcessSampler {
                 icon: app.icon,
                 cpuPercent: metrics.cpu,
                 memoryBytes: metrics.rssBytes,
-                isActive: app.isActive
+                isActive: app.isActive,
+                windows: windowsByPID[app.pid] ?? []
             )
         }
         .sorted {
@@ -105,6 +108,126 @@ private func metrics(for pids: [pid_t]) -> [pid_t: ProcessMetrics] {
         let cpu = Double(fields[1]) ?? 0
         let rssKilobytes = Int64(fields[2]) ?? 0
         result[pid] = ProcessMetrics(cpu: cpu, rssBytes: rssKilobytes * 1024)
+    }
+
+    return result
+}
+
+private func windowInfoByPID(for apps: [AppSnapshot]) -> [pid_t: [AppWindowInfo]] {
+    guard !apps.isEmpty else { return [:] }
+
+    let appNameByPID = Dictionary(uniqueKeysWithValues: apps.map { (Int($0.pid), $0.name) })
+    let wantedPIDs = Set(appNameByPID.keys)
+    guard
+        let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]]
+    else {
+        return [:]
+    }
+
+    var result: [pid_t: [AppWindowInfo]] = [:]
+    var untitledCounts: [pid_t: Int] = [:]
+    var windowOrderByPID: [pid_t: Int] = [:]
+    let axTitlesByPID = accessibilityWindowTitlesByPID(for: apps)
+
+    for window in windowList {
+        guard
+            let ownerPID = window[kCGWindowOwnerPID as String] as? Int,
+            wantedPIDs.contains(ownerPID),
+            let windowID = window[kCGWindowNumber as String] as? Int
+        else {
+            continue
+        }
+
+        let pid = pid_t(ownerPID)
+        let layer = window[kCGWindowLayer as String] as? Int ?? 0
+        guard layer == 0 else { continue }
+
+        let rawTitle = (window[kCGWindowName as String] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let order = windowOrderByPID[pid] ?? 0
+        windowOrderByPID[pid] = order + 1
+        let title: String
+        let titleIsFallback: Bool
+        if let rawTitle, !rawTitle.isEmpty {
+            title = rawTitle
+            titleIsFallback = false
+        } else if
+            let axTitles = axTitlesByPID[pid],
+            axTitles.indices.contains(order),
+            !axTitles[order].isEmpty
+        {
+            title = axTitles[order]
+            titleIsFallback = false
+        } else {
+            let count = (untitledCounts[pid] ?? 0) + 1
+            untitledCounts[pid] = count
+            let appName = appNameByPID[ownerPID] ?? "App"
+            title = "\(appName) Window \(count)"
+            titleIsFallback = true
+        }
+
+        result[pid, default: []].append(
+            AppWindowInfo(
+                id: windowID,
+                title: title,
+                titleIsFallback: titleIsFallback,
+                layer: layer
+            )
+        )
+    }
+
+    return result.mapValues { windows in
+        windows.sorted {
+            if $0.title != $1.title {
+                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+            return $0.id < $1.id
+        }
+    }
+}
+
+private func accessibilityWindowTitlesByPID(for apps: [AppSnapshot]) -> [pid_t: [String]] {
+    guard AXIsProcessTrusted() else {
+        return [:]
+    }
+
+    var result: [pid_t: [String]] = [:]
+    for app in apps {
+        let appElement = AXUIElementCreateApplication(app.pid)
+        var windowsValue: CFTypeRef?
+        let windowsResult = AXUIElementCopyAttributeValue(
+            appElement,
+            kAXWindowsAttribute as CFString,
+            &windowsValue
+        )
+
+        guard windowsResult == .success, let windows = windowsValue as? [AXUIElement] else {
+            continue
+        }
+
+        let titles = windows.compactMap { window -> String? in
+            var titleValue: CFTypeRef?
+            let titleResult = AXUIElementCopyAttributeValue(
+                window,
+                kAXTitleAttribute as CFString,
+                &titleValue
+            )
+
+            guard
+                titleResult == .success,
+                let title = titleValue as? String
+            else {
+                return nil
+            }
+
+            let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmedTitle.isEmpty ? nil : trimmedTitle
+        }
+
+        if !titles.isEmpty {
+            result[app.pid] = titles
+        }
     }
 
     return result
