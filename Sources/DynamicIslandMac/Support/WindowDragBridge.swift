@@ -32,6 +32,10 @@ struct WindowDragBridge: NSViewRepresentable {
 final class DragView: NSView {
     private let coordinator: WindowDragBridge.Coordinator
     private let dragThreshold: CGFloat = 4
+    private var startMouse: NSPoint?
+    private var startOrigin: NSPoint?
+    private var didDrag = false
+    private var pressToken = 0
 
     init(coordinator: WindowDragBridge.Coordinator) {
         self.coordinator = coordinator
@@ -56,51 +60,86 @@ final class DragView: NSView {
             return
         }
 
-        coordinator.onPressChanged(true)
+        startMouse = NSEvent.mouseLocation
+        startOrigin = window.frame.origin
+        didDrag = false
+        setPressed(true)
+    }
 
-        let startMouse = NSEvent.mouseLocation
-        let startOrigin = window.frame.origin
-        var didDrag = false
-
-        while let nextEvent = window.nextEvent(
-            matching: [.leftMouseDragged, .leftMouseUp],
-            until: .distantFuture,
-            inMode: .eventTracking,
-            dequeue: true
-        ) {
-            let currentMouse = NSEvent.mouseLocation
-            let delta = NSPoint(
-                x: currentMouse.x - startMouse.x,
-                y: currentMouse.y - startMouse.y
-            )
-            let distance = hypot(delta.x, delta.y)
-
-            if nextEvent.type == .leftMouseDragged || distance >= dragThreshold {
-                if !didDrag {
-                    coordinator.onPressChanged(false)
-                }
-                didDrag = true
-                window.markCustomPosition()
-                window.setFrameOrigin(
-                    NSPoint(
-                        x: startOrigin.x + delta.x,
-                        y: startOrigin.y + delta.y
-                    )
-                )
-            }
-
-            if nextEvent.type == .leftMouseUp {
-                break
-            }
+    override func mouseDragged(with event: NSEvent) {
+        guard
+            let window = window as? IslandWindow,
+            let startMouse,
+            let startOrigin
+        else {
+            super.mouseDragged(with: event)
+            return
         }
 
+        let currentMouse = NSEvent.mouseLocation
+        let delta = NSPoint(
+            x: currentMouse.x - startMouse.x,
+            y: currentMouse.y - startMouse.y
+        )
+        let distance = hypot(delta.x, delta.y)
+
+        guard didDrag || distance >= dragThreshold else { return }
+
         if !didDrag {
+            didDrag = true
+            setPressed(false)
+        }
+
+        window.markCustomPosition()
+        window.setFrameOrigin(
+            NSPoint(
+                x: startOrigin.x + delta.x,
+                y: startOrigin.y + delta.y
+            )
+        )
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard startMouse != nil else {
+            super.mouseUp(with: event)
+            return
+        }
+
+        let shouldClick = !didDrag
+        clearTracking()
+
+        if shouldClick {
             coordinator.onClick()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak coordinator] in
-                coordinator?.onPressChanged(false)
-            }
+            releasePressAfterClick()
         } else {
-            coordinator.onPressChanged(false)
+            setPressed(false)
+        }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil {
+            clearTracking()
+            setPressed(false)
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func clearTracking() {
+        startMouse = nil
+        startOrigin = nil
+        didDrag = false
+    }
+
+    private func setPressed(_ pressed: Bool) {
+        pressToken += 1
+        coordinator.onPressChanged(pressed)
+    }
+
+    private func releasePressAfterClick() {
+        let token = pressToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            guard let self, pressToken == token else { return }
+            setPressed(false)
         }
     }
 }

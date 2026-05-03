@@ -50,7 +50,7 @@ final class IslandWindow: NSPanel {
     }
 
     func resize(expanded: Bool) {
-        let targetFrame = expanded ? expandedFrame(from: frame) : collapsedFrame(from: frame)
+        let targetFrame = expanded ? expandedFrame() : collapsedFrame()
         animateFrame(to: targetFrame)
     }
 
@@ -70,23 +70,29 @@ final class IslandWindow: NSPanel {
         setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: true, animate: false)
     }
 
-    private func expandedFrame(from currentFrame: NSRect) -> NSRect {
-        collapsedCenterBeforeExpansion = NSPoint(x: currentFrame.midX, y: currentFrame.midY)
+    private func expandedFrame() -> NSRect {
+        let anchorCenter = collapsedAnchorCenter()
         return frame(
             size: Metrics.expandedSize,
-            centeredOn: NSPoint(x: currentFrame.midX, y: currentFrame.midY),
-            constrainedTo: currentFrame.screen?.visibleFrame
+            centeredOn: anchorCenter,
+            constrainedTo: frame.screen?.visibleFrame
         )
     }
 
-    private func collapsedFrame(from currentFrame: NSRect) -> NSRect {
-        let center = collapsedCenterBeforeExpansion ?? NSPoint(x: currentFrame.midX, y: currentFrame.midY)
-
+    private func collapsedFrame() -> NSRect {
         return frame(
             size: Metrics.collapsedSize,
-            centeredOn: center,
+            centeredOn: collapsedAnchorCenter(),
             constrainedTo: nil
         )
+    }
+
+    private func collapsedAnchorCenter() -> NSPoint {
+        if collapsedCenterBeforeExpansion == nil || frame.size.isClose(to: Metrics.collapsedSize) {
+            collapsedCenterBeforeExpansion = frame.center
+        }
+
+        return collapsedCenterBeforeExpansion ?? frame.center
     }
 
     private func frame(size: NSSize, centeredOn center: NSPoint, constrainedTo visibleFrame: NSRect?) -> NSRect {
@@ -119,12 +125,21 @@ final class IslandWindow: NSPanel {
 }
 
 private extension NSRect {
+    var center: NSPoint {
+        NSPoint(x: midX, y: midY)
+    }
+
     var screen: NSScreen? {
         NSScreen.screens.first { screen in
             screen.frame.intersects(self)
         }
     }
+}
 
+private extension NSSize {
+    func isClose(to other: NSSize) -> Bool {
+        abs(width - other.width) < 1 && abs(height - other.height) < 1
+    }
 }
 
 private final class ClearHostingView<Content: View>: NSHostingView<Content> {

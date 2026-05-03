@@ -8,6 +8,7 @@ struct IslandView: View {
         static let expandedSize = CGSize(width: 520, height: 390)
         static let animation = Animation.easeInOut(duration: 0.26)
         static let pressAnimation = Animation.easeOut(duration: 0.10)
+        static let refreshDelayMilliseconds = 280
     }
 
     @State var store: ProcessStore
@@ -133,6 +134,14 @@ struct IslandView: View {
             expanded = nextExpanded
         }
         if nextExpanded {
+            refreshAfterExpansion()
+        }
+    }
+
+    private func refreshAfterExpansion() {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(Metrics.refreshDelayMilliseconds))
+            guard expanded else { return }
             store.refresh()
         }
     }
