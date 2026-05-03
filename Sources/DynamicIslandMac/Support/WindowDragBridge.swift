@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WindowDragBridge: NSViewRepresentable {
     let onClick: () -> Void
+    var onPressChanged: (Bool) -> Void = { _ in }
 
     func makeNSView(context: Context) -> DragView {
         DragView(coordinator: context.coordinator)
@@ -10,17 +11,20 @@ struct WindowDragBridge: NSViewRepresentable {
 
     func updateNSView(_ nsView: DragView, context: Context) {
         context.coordinator.onClick = onClick
+        context.coordinator.onPressChanged = onPressChanged
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onClick: onClick)
+        Coordinator(onClick: onClick, onPressChanged: onPressChanged)
     }
 
     final class Coordinator {
         var onClick: () -> Void
+        var onPressChanged: (Bool) -> Void
 
-        init(onClick: @escaping () -> Void) {
+        init(onClick: @escaping () -> Void, onPressChanged: @escaping (Bool) -> Void) {
             self.onClick = onClick
+            self.onPressChanged = onPressChanged
         }
     }
 }
@@ -42,11 +46,17 @@ final class DragView: NSView {
         false
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
     override func mouseDown(with event: NSEvent) {
         guard let window = window as? IslandWindow else {
             super.mouseDown(with: event)
             return
         }
+
+        coordinator.onPressChanged(true)
 
         let startMouse = NSEvent.mouseLocation
         let startOrigin = window.frame.origin
@@ -66,6 +76,9 @@ final class DragView: NSView {
             let distance = hypot(delta.x, delta.y)
 
             if nextEvent.type == .leftMouseDragged || distance >= dragThreshold {
+                if !didDrag {
+                    coordinator.onPressChanged(false)
+                }
                 didDrag = true
                 window.markCustomPosition()
                 window.setFrameOrigin(
@@ -83,6 +96,11 @@ final class DragView: NSView {
 
         if !didDrag {
             coordinator.onClick()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak coordinator] in
+                coordinator?.onPressChanged(false)
+            }
+        } else {
+            coordinator.onPressChanged(false)
         }
     }
 }

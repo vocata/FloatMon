@@ -7,6 +7,7 @@ struct IslandView: View {
         static let collapsedBallDiameter: CGFloat = 64
         static let expandedSize = CGSize(width: 520, height: 390)
         static let animation = Animation.easeInOut(duration: 0.26)
+        static let pressAnimation = Animation.easeOut(duration: 0.10)
     }
 
     @State var store: ProcessStore
@@ -14,6 +15,7 @@ struct IslandView: View {
     @State private var sortMode: ProcessSortMode = .cpu
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
+    @State private var togglePressed = false
 
     private var activeApp: AppProcess? {
         store.apps.first(where: \.isActive) ?? store.apps.first
@@ -106,7 +108,10 @@ struct IslandView: View {
                 .fill(.black.opacity(0.92))
         }
         .foregroundStyle(.white)
+        .scaleEffect(togglePressed ? pressedScale : 1)
+        .brightness(togglePressed ? 0.045 : 0)
         .animation(Metrics.animation, value: expanded)
+        .animation(Metrics.pressAnimation, value: togglePressed)
     }
 
     private var containerShape: AnyShape {
@@ -115,6 +120,10 @@ struct IslandView: View {
         } else {
             AnyShape(Circle())
         }
+    }
+
+    private var pressedScale: CGFloat {
+        expanded ? 0.992 : 0.94
     }
 
     private func toggleExpanded() {
@@ -157,6 +166,12 @@ struct IslandView: View {
                 .frame(height: 64, alignment: .center)
                 .padding(.leading, 20)
                 .padding(.trailing, 18)
+                .background {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(.white.opacity(togglePressed ? 0.055 : 0))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                }
             } else {
                 ZStack(alignment: .bottomTrailing) {
                     AppIconView(image: activeApp?.icon, size: 38)
@@ -174,7 +189,12 @@ struct IslandView: View {
             }
         }
         .contentShape(Rectangle())
-        .overlay(WindowDragBridge(onClick: toggleExpanded))
+        .overlay(
+            WindowDragBridge(
+                onClick: toggleExpanded,
+                onPressChanged: { togglePressed = $0 }
+            )
+        )
     }
 
     private var currentPanel: IslandWindow? {

@@ -11,6 +11,7 @@ final class IslandWindow: NSPanel {
 
     private let processStore: ProcessStore
     private var collapsedCenterBeforeExpansion: NSPoint?
+    private var frameAnimationToken = 0
 
     init(processStore: ProcessStore) {
         self.processStore = processStore
@@ -104,10 +105,15 @@ final class IslandWindow: NSPanel {
         let currentFrame = frame
         guard currentFrame != targetFrame else { return }
 
+        frameAnimationToken += 1
+        let animationToken = frameAnimationToken
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Metrics.animationDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             animator().setFrame(targetFrame, display: true)
+        } completionHandler: { [weak self] in
+            guard let self, frameAnimationToken == animationToken else { return }
+            setFrame(targetFrame, display: true, animate: false)
         }
     }
 }
