@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 
 struct IslandView: View {
+    private enum Metrics {
+        static let collapsedWindowDiameter: CGFloat = 68
+        static let collapsedBallDiameter: CGFloat = 64
+        static let expandedSize = CGSize(width: 520, height: 390)
+        static let animation = Animation.easeInOut(duration: 0.26)
+    }
+
     @State var store: ProcessStore
     @State private var expanded = false
     @State private var sortMode: ProcessSortMode = .cpu
@@ -12,25 +19,70 @@ struct IslandView: View {
         store.apps.first(where: \.isActive) ?? store.apps.first
     }
 
-    private var islandContentSize: CGSize {
-        expanded ? CGSize(width: 520, height: 390) : CGSize(width: 320, height: 54)
+    private var islandWindowSize: CGSize {
+        expanded
+        ? Metrics.expandedSize
+        : CGSize(width: Metrics.collapsedWindowDiameter, height: Metrics.collapsedWindowDiameter)
+    }
+
+    private var islandVisualSize: CGSize {
+        expanded
+        ? Metrics.expandedSize
+        : CGSize(width: Metrics.collapsedBallDiameter, height: Metrics.collapsedBallDiameter)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.84)) {
-                    expanded.toggle()
+        visualContent
+            .frame(width: islandWindowSize.width, height: islandWindowSize.height, alignment: .center)
+            .alert(
+                "Force Quit \(pendingForceQuitApp?.name ?? "App")?",
+                isPresented: Binding(
+                    get: { pendingForceQuitApp != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            pendingForceQuitApp = nil
+                        }
+                    }
+                ),
+                presenting: pendingForceQuitApp
+            ) { app in
+                Button("Cancel", role: .cancel) {
+                    pendingForceQuitApp = nil
                 }
-                currentPanel?.resize(expanded: expanded)
-                if expanded {
-                    store.refresh()
+                Button("Force Quit", role: .destructive) {
+                    forceQuitApp(app)
+                    pendingForceQuitApp = nil
                 }
-            } label: {
-                collapsedContent
+            } message: { app in
+                Text("This will immediately terminate \(app.name). Unsaved changes may be lost.")
             }
-            .buttonStyle(.plain)
-            .frame(height: 54)
+            .alert(
+                "Precise Window Focus Needs Permission",
+                isPresented: Binding(
+                    get: { focusError != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            focusError = nil
+                        }
+                    }
+                )
+            ) {
+                Button("Open Settings") {
+                    openAccessibilitySettings()
+                    focusError = nil
+                }
+                Button("OK", role: .cancel) {
+                    focusError = nil
+                }
+            } message: {
+                Text(focusError ?? "")
+            }
+    }
+
+    private var visualContent: some View {
+        VStack(spacing: 0) {
+            collapsedContent
+                .frame(height: 64)
 
             if expanded {
                 Divider()
@@ -44,98 +96,85 @@ struct IslandView: View {
                     focusWindow: focusWindow,
                     requestForceQuit: { pendingForceQuitApp = $0 }
                 )
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
-        .frame(width: islandContentSize.width, height: islandContentSize.height, alignment: .top)
-        .clipped()
+        .frame(width: islandVisualSize.width, height: islandVisualSize.height, alignment: .top)
+        .clipShape(containerShape)
         .background {
-            RoundedRectangle(cornerRadius: expanded ? 28 : 27, style: .continuous)
+            containerShape
                 .fill(.black.opacity(0.92))
-                .overlay {
-                    RoundedRectangle(cornerRadius: expanded ? 28 : 27, style: .continuous)
-                        .stroke(.white.opacity(0.14), lineWidth: 1)
-                }
         }
         .foregroundStyle(.white)
-        .shadow(color: .black.opacity(expanded ? 0.34 : 0.2), radius: expanded ? 24 : 12, y: 10)
-        .alert(
-            "Force Quit \(pendingForceQuitApp?.name ?? "App")?",
-            isPresented: Binding(
-                get: { pendingForceQuitApp != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        pendingForceQuitApp = nil
-                    }
-                }
-            ),
-            presenting: pendingForceQuitApp
-        ) { app in
-            Button("Cancel", role: .cancel) {
-                pendingForceQuitApp = nil
-            }
-            Button("Force Quit", role: .destructive) {
-                forceQuitApp(app)
-                pendingForceQuitApp = nil
-            }
-        } message: { app in
-            Text("This will immediately terminate \(app.name). Unsaved changes may be lost.")
+        .animation(Metrics.animation, value: expanded)
+    }
+
+    private var containerShape: AnyShape {
+        if expanded {
+            AnyShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        } else {
+            AnyShape(Circle())
         }
-        .alert(
-            "Precise Window Focus Needs Permission",
-            isPresented: Binding(
-                get: { focusError != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        focusError = nil
-                    }
-                }
-            )
-        ) {
-            Button("Open Settings") {
-                openAccessibilitySettings()
-                focusError = nil
-            }
-            Button("OK", role: .cancel) {
-                focusError = nil
-            }
-        } message: {
-            Text(focusError ?? "")
+    }
+
+    private func toggleExpanded() {
+        let nextExpanded = !expanded
+        currentPanel?.resize(expanded: nextExpanded)
+        withAnimation(Metrics.animation) {
+            expanded = nextExpanded
+        }
+        if nextExpanded {
+            store.refresh()
         }
     }
 
     private var collapsedContent: some View {
-        HStack(spacing: 12) {
-            CameraCapsule()
+        Group {
+            if expanded {
+                HStack(spacing: 12) {
+                    AppIconView(image: activeApp?.icon, size: 34)
 
-            if let activeApp {
-                AppIconView(image: activeApp.icon, size: 28)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(activeApp.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    Text("\(AppFormatters.cpu(activeApp.cpuPercent)) CPU · \(AppFormatters.memory(activeApp.memoryBytes))")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.62))
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(activeApp?.name ?? "No active apps")
+                            .font(.system(size: 16, weight: .semibold))
+                            .lineLimit(1)
+
+                        if let activeApp {
+                            Text("\(AppFormatters.cpu(activeApp.cpuPercent)) CPU · \(AppFormatters.memory(activeApp.memoryBytes))")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.62))
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .frame(width: 28, height: 28)
                 }
+                .frame(height: 64, alignment: .center)
+                .padding(.leading, 20)
+                .padding(.trailing, 18)
             } else {
-                Text("No active apps")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
+                ZStack(alignment: .bottomTrailing) {
+                    AppIconView(image: activeApp?.icon, size: 38)
+
+                    Circle()
+                        .fill(activeApp == nil ? .gray : .green)
+                        .frame(width: 9, height: 9)
+                        .overlay {
+                            Circle()
+                                .stroke(.black.opacity(0.92), lineWidth: 2)
+                        }
+                        .offset(x: 1, y: 1)
+                }
+                .frame(width: 64, height: 64)
             }
-
-            Spacer(minLength: 0)
-
-            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white.opacity(0.58))
-                .frame(width: 24, height: 24)
         }
-        .frame(height: 54, alignment: .center)
-        .padding(.leading, 16)
-        .padding(.trailing, 13)
         .contentShape(Rectangle())
+        .overlay(WindowDragBridge(onClick: toggleExpanded))
     }
 
     private var currentPanel: IslandWindow? {

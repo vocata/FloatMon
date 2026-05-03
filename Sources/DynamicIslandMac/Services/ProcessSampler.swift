@@ -17,21 +17,26 @@ struct ProcessSampler {
             : regularApps
         let snapshots = apps.map(AppSnapshot.init)
         let pids = snapshots.map(\.pid)
-        let metricsByPID = await Task.detached(priority: .utility) {
+        let windowSnapshots = snapshots.map(WindowLookupSnapshot.init)
+        let metricsTask = Task.detached(priority: .utility) {
             metrics(for: pids)
-        }.value
-        let windowsByPID = windowInfoByPID(for: snapshots)
+        }
+        let windowsTask = Task.detached(priority: .utility) {
+            windowInfoByPID(for: windowSnapshots)
+        }
+        let metricsByPID = await metricsTask.value
+        let windowsByPID = await windowsTask.value
 
         return snapshots.map { app in
-            let metrics = metricsByPID[app.pid] ?? .empty
+            let appMetrics = metricsByPID[app.pid] ?? .empty
             return AppProcess(
                 id: app.pid,
                 name: app.name,
                 bundleIdentifier: app.bundleIdentifier,
                 bundleURL: app.bundleURL,
                 icon: app.icon,
-                cpuPercent: metrics.cpu,
-                memoryBytes: metrics.rssBytes,
+                cpuPercent: appMetrics.cpu,
+                memoryBytes: appMetrics.rssBytes,
                 isActive: app.isActive,
                 windows: windowsByPID[app.pid] ?? []
             )
@@ -63,6 +68,16 @@ private struct AppSnapshot {
         bundleURL = app.bundleURL
         icon = app.icon
         isActive = app.isActive
+    }
+}
+
+private struct WindowLookupSnapshot: Sendable {
+    let pid: pid_t
+    let name: String
+
+    init(app: AppSnapshot) {
+        pid = app.pid
+        name = app.name
     }
 }
 
@@ -113,7 +128,7 @@ private func metrics(for pids: [pid_t]) -> [pid_t: ProcessMetrics] {
     return result
 }
 
-private func windowInfoByPID(for apps: [AppSnapshot]) -> [pid_t: [AppWindowInfo]] {
+private func windowInfoByPID(for apps: [WindowLookupSnapshot]) -> [pid_t: [AppWindowInfo]] {
     guard !apps.isEmpty else { return [:] }
 
     let appNameByPID = Dictionary(uniqueKeysWithValues: apps.map { (Int($0.pid), $0.name) })
@@ -187,7 +202,7 @@ private func windowInfoByPID(for apps: [AppSnapshot]) -> [pid_t: [AppWindowInfo]
     }
 }
 
-private func accessibilityWindowTitlesByPID(for apps: [AppSnapshot]) -> [pid_t: [String]] {
+private func accessibilityWindowTitlesByPID(for apps: [WindowLookupSnapshot]) -> [pid_t: [String]] {
     guard AXIsProcessTrusted() else {
         return [:]
     }
