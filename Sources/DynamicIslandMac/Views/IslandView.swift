@@ -97,6 +97,7 @@ struct IslandView: View {
                     sortMode: $sortMode,
                     activate: activateApp,
                     focusWindow: focusWindow,
+                    closeWindow: closeWindow,
                     requestForceQuit: { pendingForceQuitApp = $0 }
                 )
                     .transition(.opacity)
@@ -265,6 +266,21 @@ struct IslandView: View {
         }
     }
 
+    private func closeWindow(_ window: AppWindowInfo, in app: AppProcess) {
+        Task { @MainActor in
+            let result = await WindowFocusService.close(window: window, in: app)
+            switch result {
+            case .success:
+                try? await Task.sleep(for: .milliseconds(350))
+                store.refresh()
+            case .accessibilityPermissionRequired:
+                focusError = "macOS requires Accessibility permission to close a specific window inside \(app.name). If you already enabled it, quit DynamicIslandMac and launch the existing app again without rebuilding so macOS rechecks the same signed bundle."
+            case .windowNotFound:
+                focusError = "The target window could not be closed. Refresh the list and try again."
+            }
+        }
+    }
+
     private func openAccessibilitySettings() {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
             return
@@ -297,11 +313,16 @@ private struct ExpandedProcessList: View {
     @Binding var sortMode: ProcessSortMode
     let activate: (AppProcess) -> Void
     let focusWindow: (AppWindowInfo, AppProcess) -> Void
+    let closeWindow: (AppWindowInfo, AppProcess) -> Void
     let requestForceQuit: (AppProcess) -> Void
     @State private var expandedAppIDs: Set<pid_t> = []
 
     private var sortedApps: [AppProcess] {
         sortMode.sorted(apps)
+    }
+
+    private var expandableAppIDs: Set<pid_t> {
+        Set(apps.filter { !$0.windows.isEmpty }.map(\.id))
     }
 
     var body: some View {
@@ -321,21 +342,26 @@ private struct ExpandedProcessList: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(sortedApps) { app in
+                        let isWindowListVisible = expandedAppIDs.contains(app.id) && !app.windows.isEmpty
+
                         VStack(spacing: 4) {
                             ProcessRow(
                                 app: app,
-                                isExpanded: expandedAppIDs.contains(app.id),
+                                isExpanded: isWindowListVisible,
                                 toggleWindows: { toggleWindows(for: app) },
                                 activate: { activate(app) },
                                 requestForceQuit: { requestForceQuit(app) }
                             )
 
-                            if expandedAppIDs.contains(app.id) {
+                            if isWindowListVisible {
                                 WindowList(
                                     windows: app.windows,
                                     appIcon: app.icon,
                                     focusWindow: {
                                         focusWindow($0, app)
+                                    },
+                                    closeWindow: {
+                                        closeWindow($0, app)
                                     }
                                 )
                                     .transition(.opacity.combined(with: .move(edge: .top)))
@@ -349,6 +375,9 @@ private struct ExpandedProcessList: View {
                 .padding(.bottom, 16)
             }
             .scrollIndicators(.automatic)
+        }
+        .onChange(of: expandableAppIDs) { _, ids in
+            expandedAppIDs.formIntersection(ids)
         }
     }
 
@@ -524,6 +553,7 @@ private struct WindowList: View {
     let windows: [AppWindowInfo]
     let appIcon: NSImage?
     let focusWindow: (AppWindowInfo) -> Void
+    let closeWindow: (AppWindowInfo) -> Void
     @State private var hoveringWindowID: Int?
 
     var body: some View {
@@ -545,6 +575,22 @@ private struct WindowList: View {
                             .lineLimit(1)
 
                         Spacer(minLength: 0)
+
+                        Button {
+                            closeWindow(window)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundStyle(.white.opacity(hoveringWindowID == window.id ? 0.76 : 0.42))
+                                .frame(width: 18, height: 18)
+                                .background {
+                                    Circle()
+                                        .fill(.white.opacity(hoveringWindowID == window.id ? 0.12 : 0.06))
+                                }
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Close \(window.title)")
                     }
                     .frame(height: 28)
                     .padding(.leading, 10)

@@ -42,6 +42,33 @@ enum WindowFocusService {
         : .windowNotFound
     }
 
+    @MainActor
+    @discardableResult
+    static func close(window: AppWindowInfo, in app: AppProcess) async -> WindowFocusResult {
+        guard AccessibilityPermissionService.isTrusted(prompt: false) else {
+            activate(app: app)
+            return .accessibilityPermissionRequired
+        }
+
+        activate(app: app)
+        try? await Task.sleep(for: .milliseconds(90))
+
+        let appElement = AXUIElementCreateApplication(app.id)
+        guard let axWindow = axWindow(for: window, appName: app.name, appElement: appElement) else {
+            return .windowNotFound
+        }
+
+        focus(axWindow: axWindow, appElement: appElement)
+        try? await Task.sleep(for: .milliseconds(80))
+        guard let closeButton = closeButton(for: axWindow) else {
+            return .windowNotFound
+        }
+
+        return AXUIElementPerformAction(closeButton, kAXPressAction as CFString) == .success
+        ? .success
+        : .windowNotFound
+    }
+
     private static func axWindow(
         for window: AppWindowInfo,
         appName: String,
@@ -133,6 +160,25 @@ enum WindowFocusService {
             kCFBooleanTrue
         )
         AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+    }
+
+    private static func closeButton(for axWindow: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            axWindow,
+            kAXCloseButtonAttribute as CFString,
+            &value
+        )
+
+        guard
+            result == .success,
+            let value,
+            CFGetTypeID(value) == AXUIElementGetTypeID()
+        else {
+            return nil
+        }
+
+        return (value as! AXUIElement)
     }
 
     private static func isFocused(
