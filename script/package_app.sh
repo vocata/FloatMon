@@ -4,7 +4,7 @@ set -euo pipefail
 APP_NAME="DynamicIslandMac"
 BUNDLE_ID="local.dynamic-island-mac"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-DIST_DIR="$ROOT_DIR/dist"
+DIST_DIR="$ROOT_DIR/dist.noindex"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 EXECUTABLE="$ROOT_DIR/.build/debug/$APP_NAME"
 ICON_FILE="$ROOT_DIR/Resources/AppIcon.icns"

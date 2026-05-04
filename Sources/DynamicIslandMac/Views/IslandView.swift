@@ -252,10 +252,8 @@ struct IslandView: View {
     }
 
     private func focusWindow(_ window: AppWindowInfo, in app: AppProcess) {
-        WindowFocusService.activate(app: app)
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))
-            let result = WindowFocusService.focus(window: window, in: app)
+            let result = await WindowFocusService.focus(window: window, in: app)
             switch result {
             case .success:
                 break

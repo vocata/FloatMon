@@ -149,7 +149,9 @@ private func windowInfoByPID(for apps: [WindowLookupSnapshot]) -> [pid_t: [AppWi
         guard
             let ownerPID = window[kCGWindowOwnerPID as String] as? Int,
             wantedPIDs.contains(ownerPID),
-            let windowID = window[kCGWindowNumber as String] as? Int
+            let windowID = window[kCGWindowNumber as String] as? Int,
+            let boundsValue = window[kCGWindowBounds as String] as? NSDictionary,
+            let frame = CGRect(dictionaryRepresentation: boundsValue)
         else {
             continue
         }
@@ -187,6 +189,7 @@ private func windowInfoByPID(for apps: [WindowLookupSnapshot]) -> [pid_t: [AppWi
                 id: windowID,
                 title: title,
                 titleIsFallback: titleIsFallback,
+                frame: frame,
                 layer: layer
             )
         )

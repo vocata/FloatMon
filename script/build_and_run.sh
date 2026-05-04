@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_NAME="DynamicIslandMac"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-APP_BUNDLE="$ROOT_DIR/dist/$APP_NAME.app"
+APP_BUNDLE="$ROOT_DIR/dist.noindex/$APP_NAME.app"
 
 cd "$ROOT_DIR"
 
