@@ -17,10 +17,6 @@ enum ProcessSortMode: String, CaseIterable, Identifiable {
 
     func sorted(_ apps: [AppProcess]) -> [AppProcess] {
         apps.sorted { lhs, rhs in
-            if lhs.isActive != rhs.isActive {
-                return lhs.isActive
-            }
-
             switch self {
             case .cpu:
                 if lhs.cpuPercent != rhs.cpuPercent {

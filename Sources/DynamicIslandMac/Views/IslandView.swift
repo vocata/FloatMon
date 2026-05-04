@@ -18,8 +18,13 @@ struct IslandView: View {
     @State private var focusError: String?
     @State private var togglePressed = false
 
-    private var activeApp: AppProcess? {
-        store.apps.first(where: \.isActive) ?? store.apps.first
+    private var featuredApp: AppProcess? {
+        sortMode.sorted(store.apps).first
+    }
+
+    private var featuredPressure: ResourcePressure {
+        guard let featuredApp else { return .none }
+        return ResourcePressure(app: featuredApp, sortMode: sortMode)
     }
 
     private var islandWindowSize: CGSize {
@@ -71,7 +76,7 @@ struct IslandView: View {
                 )
             ) {
                 Button("Open Settings") {
-                    openAccessibilitySettings()
+                    AccessibilityPermissionService.openSettings()
                     focusError = nil
                 }
                 Button("OK", role: .cancel) {
@@ -128,6 +133,19 @@ struct IslandView: View {
         expanded ? 0.992 : 0.94
     }
 
+    private var featuredPressureColor: Color {
+        switch featuredPressure {
+        case .none:
+            return .gray
+        case .low:
+            return .green
+        case .medium:
+            return .orange
+        case .high:
+            return .red
+        }
+    }
+
     private func toggleExpanded() {
         let nextExpanded = !expanded
         currentPanel?.resize(expanded: nextExpanded)
@@ -151,15 +169,15 @@ struct IslandView: View {
         Group {
             if expanded {
                 HStack(spacing: 12) {
-                    AppIconView(image: activeApp?.icon, size: 34)
+                    AppIconView(image: featuredApp?.icon, size: 34)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(activeApp?.name ?? "No active apps")
+                        Text(featuredApp?.name ?? "No open apps")
                             .font(.system(size: 16, weight: .semibold))
                             .lineLimit(1)
 
-                        if let activeApp {
-                            Text("\(AppFormatters.cpu(activeApp.cpuPercent)) CPU · \(AppFormatters.memory(activeApp.memoryBytes))")
+                        if let featuredApp {
+                            Text("\(AppFormatters.cpu(featuredApp.cpuPercent)) CPU · \(AppFormatters.memory(featuredApp.memoryBytes))")
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.62))
                                 .lineLimit(1)
@@ -184,10 +202,10 @@ struct IslandView: View {
                 }
             } else {
                 ZStack(alignment: .bottomTrailing) {
-                    AppIconView(image: activeApp?.icon, size: 38)
+                    AppIconView(image: featuredApp?.icon, size: 38)
 
                     Circle()
-                        .fill(activeApp == nil ? .gray : .green)
+                        .fill(featuredPressureColor)
                         .frame(width: 9, height: 9)
                         .overlay {
                             Circle()
@@ -212,10 +230,7 @@ struct IslandView: View {
     }
 
     private func activateApp(_ app: AppProcess) {
-        if let runningApp = NSRunningApplication(processIdentifier: app.id) {
-            runningApp.unhide()
-            runningApp.activate(options: [.activateAllWindows])
-        }
+        WindowFocusService.activate(app: app)
 
         guard let bundleURL = app.bundleURL ?? bundleURL(for: app) else {
             store.refresh()
@@ -259,7 +274,7 @@ struct IslandView: View {
             case .success:
                 break
             case .accessibilityPermissionRequired:
-                focusError = "macOS requires Accessibility permission to jump to a specific window inside \(app.name). If you already enabled it, quit DynamicIslandMac and launch the existing app again without rebuilding so macOS rechecks the same signed bundle."
+                focusError = accessibilityPermissionMessage(action: "jump to", app: app)
             case .windowNotFound:
                 focusError = "The target window could not be found. Refresh the list and try again."
             }
@@ -274,37 +289,15 @@ struct IslandView: View {
                 try? await Task.sleep(for: .milliseconds(350))
                 store.refresh()
             case .accessibilityPermissionRequired:
-                focusError = "macOS requires Accessibility permission to close a specific window inside \(app.name). If you already enabled it, quit DynamicIslandMac and launch the existing app again without rebuilding so macOS rechecks the same signed bundle."
+                focusError = accessibilityPermissionMessage(action: "close", app: app)
             case .windowNotFound:
                 focusError = "The target window could not be closed. Refresh the list and try again."
             }
         }
     }
 
-    private func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
-            return
-        }
-
-        NSWorkspace.shared.open(url)
-    }
-}
-
-private struct CameraCapsule: View {
-    var body: some View {
-        Capsule()
-            .fill(.black)
-            .frame(width: 78, height: 25)
-            .overlay(alignment: .trailing) {
-                Circle()
-                    .fill(.white.opacity(0.08))
-                    .frame(width: 9, height: 9)
-                    .padding(.trailing, 11)
-            }
-            .overlay {
-                Capsule()
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            }
+    private func accessibilityPermissionMessage(action: String, app: AppProcess) -> String {
+        "macOS requires Accessibility permission to \(action) a specific window inside \(app.name). If you already enabled it, quit DynamicIslandMac and launch the existing app again without rebuilding so macOS rechecks the same signed bundle."
     }
 }
 
@@ -410,18 +403,22 @@ private struct SortModeControl: View {
         padding * 2
     }
 
+    private var selectionAnimation: Animation {
+        .interactiveSpring(response: 0.34, dampingFraction: 0.88, blendDuration: 0.14)
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.white)
                 .frame(width: itemWidth, height: itemHeight)
                 .offset(x: padding + CGFloat(selectionIndex) * (itemWidth + spacing))
-                .animation(.interactiveSpring(response: 0.34, dampingFraction: 0.88, blendDuration: 0.14), value: selection)
+                .animation(selectionAnimation, value: selection)
 
             HStack(spacing: spacing) {
                 ForEach(ProcessSortMode.allCases) { mode in
                     Button {
-                        withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.88, blendDuration: 0.14)) {
+                        withAnimation(selectionAnimation) {
                             selection = mode
                         }
                     } label: {
@@ -461,17 +458,9 @@ private struct ProcessRow: View {
             AppIconView(image: app.icon, size: 34)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(app.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-
-                    if app.isActive {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 6, height: 6)
-                    }
-                }
+                Text(app.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
 
                 Text(app.bundleIdentifier ?? "pid \(app.id)")
                     .font(.system(size: 11, weight: .medium))
@@ -541,11 +530,7 @@ private struct ProcessRow: View {
     }
 
     private var rowBackground: Color {
-        if app.isActive {
-            return .white.opacity(isHovering ? 0.18 : 0.14)
-        }
-
-        return .white.opacity(isHovering ? 0.11 : 0.07)
+        .white.opacity(isHovering ? 0.11 : 0.07)
     }
 }
 
@@ -597,7 +582,7 @@ private struct WindowList: View {
                     .padding(.trailing, 8)
                     .background {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(backgroundOpacity(for: window))
+                            .fill(rowBackground(for: window))
                     }
                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .onTapGesture(count: 2) {
@@ -616,12 +601,8 @@ private struct WindowList: View {
         .padding(.trailing, 18)
     }
 
-    private func backgroundOpacity(for window: AppWindowInfo) -> Color {
-        if hoveringWindowID == window.id {
-            return .white.opacity(0.075)
-        }
-
-        return .white.opacity(0.035)
+    private func rowBackground(for window: AppWindowInfo) -> Color {
+        .white.opacity(hoveringWindowID == window.id ? 0.075 : 0.035)
     }
 }
 

@@ -9,6 +9,5 @@ struct AppProcess: Identifiable {
     let icon: NSImage?
     let cpuPercent: Double
     let memoryBytes: Int64
-    let isActive: Bool
     let windows: [AppWindowInfo]
 }

@@ -37,18 +37,8 @@ struct ProcessSampler {
                 icon: app.icon,
                 cpuPercent: appMetrics.cpu,
                 memoryBytes: appMetrics.rssBytes,
-                isActive: app.isActive,
                 windows: windowsByPID[app.pid] ?? []
             )
-        }
-        .sorted {
-            if $0.isActive != $1.isActive {
-                return $0.isActive
-            }
-            if $0.cpuPercent != $1.cpuPercent {
-                return $0.cpuPercent > $1.cpuPercent
-            }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
 }
@@ -59,7 +49,6 @@ private struct AppSnapshot {
     let bundleIdentifier: String?
     let bundleURL: URL?
     let icon: NSImage?
-    let isActive: Bool
 
     init(app: NSRunningApplication) {
         pid = app.processIdentifier
@@ -67,7 +56,6 @@ private struct AppSnapshot {
         bundleIdentifier = app.bundleIdentifier
         bundleURL = app.bundleURL
         icon = app.icon
-        isActive = app.isActive
     }
 }
 
@@ -165,32 +153,26 @@ private func windowInfoByPID(for apps: [WindowLookupSnapshot]) -> [pid_t: [AppWi
         let order = windowOrderByPID[pid] ?? 0
         windowOrderByPID[pid] = order + 1
         let title: String
-        let titleIsFallback: Bool
         if let rawTitle, !rawTitle.isEmpty {
             title = rawTitle
-            titleIsFallback = false
         } else if
             let axTitles = axTitlesByPID[pid],
             axTitles.indices.contains(order),
             !axTitles[order].isEmpty
         {
             title = axTitles[order]
-            titleIsFallback = false
         } else {
             let count = (untitledCounts[pid] ?? 0) + 1
             untitledCounts[pid] = count
             let appName = appNameByPID[ownerPID] ?? "App"
             title = "\(appName) Window \(count)"
-            titleIsFallback = true
         }
 
         result[pid, default: []].append(
             AppWindowInfo(
                 id: windowID,
                 title: title,
-                titleIsFallback: titleIsFallback,
-                frame: frame,
-                layer: layer
+                frame: frame
             )
         )
     }
