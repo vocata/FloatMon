@@ -19,7 +19,7 @@ enum WindowFocusService {
     @MainActor
     @discardableResult
     static func focus(window: AppWindowInfo, in app: AppProcess) -> WindowFocusResult {
-        guard isAccessibilityTrusted(prompt: true) else {
+        guard AccessibilityPermissionService.isTrusted(prompt: false) else {
             activate(app: app)
             return .accessibilityPermissionRequired
         }
@@ -33,11 +33,6 @@ enum WindowFocusService {
         AXUIElementSetAttributeValue(axWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementSetAttributeValue(axWindow, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         return .success
-    }
-
-    private static func isAccessibilityTrusted(prompt: Bool) -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeRetainedValue() as String: prompt] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
     }
 
     private static func axWindow(for window: AppWindowInfo, pid: pid_t) -> AXUIElement? {

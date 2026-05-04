@@ -9,6 +9,20 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 EXECUTABLE="$ROOT_DIR/.build/debug/$APP_NAME"
 ICON_FILE="$ROOT_DIR/Resources/AppIcon.icns"
 
+detect_signing_identity() {
+  /usr/bin/security find-identity -v -p codesigning 2>/dev/null | /usr/bin/awk -F '"' '
+    /"Developer ID Application:/ { print $2; found = 1; exit }
+    /"Apple Distribution:/ { print $2; found = 1; exit }
+    /"Apple Development:/ && !candidate { candidate = $2 }
+    /"Mac Developer:/ && !candidate { candidate = $2 }
+    END {
+      if (!found && candidate) {
+        print candidate
+      }
+    }
+  '
+}
+
 cd "$ROOT_DIR"
 
 export CLANG_MODULE_CACHE_PATH="$ROOT_DIR/.build/module-cache"
@@ -55,11 +69,20 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
   <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
-  <key>LSUIElement</key>
-  <true/>
 </dict>
 </plist>
 PLIST
 
-/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+SIGNING_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+if [[ -z "$SIGNING_IDENTITY" ]]; then
+  SIGNING_IDENTITY="$(detect_signing_identity)"
+fi
+
+if [[ -z "$SIGNING_IDENTITY" ]]; then
+  SIGNING_IDENTITY="-"
+  echo "warning: no stable code signing identity found; using ad-hoc signing." >&2
+  echo "warning: macOS Accessibility permission may need to be granted again after each rebuild." >&2
+fi
+
+/usr/bin/codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_BUNDLE" >/dev/null
 echo "$APP_BUNDLE"

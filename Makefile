@@ -1,4 +1,5 @@
 APP_NAME := DynamicIslandMac
+CODE_SIGN_IDENTITY ?=
 SWIFT_BUILD_ENV := CLANG_MODULE_CACHE_PATH=$(CURDIR)/.build/module-cache
 SWIFT_BUILD_FLAGS := --disable-sandbox --manifest-cache local --cache-path $(CURDIR)/.build/swiftpm-cache --config-path $(CURDIR)/.build/swiftpm-config --security-path $(CURDIR)/.build/swiftpm-security
 
@@ -9,7 +10,7 @@ build:
 	$(SWIFT_BUILD_ENV) swift build $(SWIFT_BUILD_FLAGS)
 
 package:
-	./script/package_app.sh
+	CODE_SIGN_IDENTITY="$(CODE_SIGN_IDENTITY)" ./script/package_app.sh
 
 install: package
 	ditto dist/$(APP_NAME).app /Applications/$(APP_NAME).app
