@@ -594,7 +594,7 @@ private struct WindowList: View {
                     }
                     .frame(height: 28)
                     .padding(.leading, 10)
-                    .padding(.trailing, 12)
+                    .padding(.trailing, 8)
                     .background {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(backgroundOpacity(for: window))
@@ -613,7 +613,7 @@ private struct WindowList: View {
             }
         }
         .padding(.leading, 28)
-        .padding(.trailing, 46)
+        .padding(.trailing, 18)
     }
 
     private func backgroundOpacity(for window: AppWindowInfo) -> Color {
