@@ -16,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        processStore?.stop()
+    }
+
     private func continueWhenAuthorized() {
         if AccessibilityPermissionService.isTrusted(prompt: false) {
             showIsland()
@@ -52,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "DynamicIslandMac"
+        window.title = "FloatMon"
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: rootView)
         window.center()

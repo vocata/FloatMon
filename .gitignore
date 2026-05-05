@@ -1,4 +1,6 @@
 .build/
+.codex/
+.swiftpm/
 dist/
 dist.noindex/
 .DS_Store

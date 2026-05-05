@@ -1,6 +1,11 @@
 import Foundation
 
 enum ResourcePressure {
+    private enum Threshold {
+        static let mediumPercent = 20.0
+        static let highPercent = 60.0
+    }
+
     case none
     case low
     case medium
@@ -16,15 +21,15 @@ enum ResourcePressure {
     }
 
     private static func cpu(_ value: Double) -> ResourcePressure {
-        if value >= 60 { return .high }
-        if value >= 20 { return .medium }
+        if value >= Threshold.highPercent { return .high }
+        if value >= Threshold.mediumPercent { return .medium }
         return .low
     }
 
     private static func memory(_ bytes: Int64) -> ResourcePressure {
         let percent = Double(bytes) / Double(ProcessInfo.processInfo.physicalMemory) * 100
-        if percent >= 60 { return .high }
-        if percent >= 20 { return .medium }
+        if percent >= Threshold.highPercent { return .high }
+        if percent >= Threshold.mediumPercent { return .medium }
         return .low
     }
 }

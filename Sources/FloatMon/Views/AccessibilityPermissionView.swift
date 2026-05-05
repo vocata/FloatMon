@@ -25,7 +25,7 @@ struct AccessibilityPermissionView: View {
                     Text("Accessibility Permission Required")
                         .font(.system(size: 19, weight: .semibold))
 
-                    Text("DynamicIslandMac needs this permission before it can inspect windows and jump between apps.")
+                    Text("FloatMon needs this permission before it can inspect windows and jump between apps.")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -48,7 +48,7 @@ struct AccessibilityPermissionView: View {
                     if recheckPermission() {
                         continueToApp()
                     } else {
-                        message = "Permission is still missing. Enable DynamicIslandMac in Accessibility, then recheck."
+                        message = "Permission is still missing. Enable FloatMon in Accessibility, then recheck."
                     }
                 }
                 .buttonStyle(.bordered)

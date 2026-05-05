@@ -7,13 +7,15 @@ final class ProcessStore {
     var apps: [AppProcess] = []
     var lastUpdated = Date()
 
-    private let sampler = ProcessSampler()
+    private let sampler: ProcessSampler
     private var isRefreshing = false
     private var timer: Timer?
 
-    init() {
+    init(sampler: ProcessSampler = ProcessSampler(), refreshInterval: TimeInterval = 3) {
+        self.sampler = sampler
+
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
             }
@@ -30,5 +32,10 @@ final class ProcessStore {
             self.lastUpdated = Date()
             self.isRefreshing = false
         }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
     }
 }

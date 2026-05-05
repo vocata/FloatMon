@@ -10,10 +10,7 @@ enum WindowFocusResult {
 enum WindowFocusService {
     @MainActor
     static func activate(app: AppProcess) {
-        if let runningApp = NSRunningApplication(processIdentifier: app.id) {
-            runningApp.unhide()
-            runningApp.activate(options: [.activateAllWindows])
-        }
+        ApplicationService.activateRunningInstance(app)
     }
 
     @MainActor

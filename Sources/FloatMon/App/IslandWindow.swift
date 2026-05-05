@@ -32,7 +32,14 @@ final class IslandWindow: NSPanel {
         isMovableByWindowBackground = false
         acceptsMouseMovedEvents = true
 
-        let hostingView = ClearHostingView(rootView: IslandView(store: processStore))
+        let hostingView = ClearHostingView(
+            rootView: IslandView(
+                store: processStore,
+                resizeWindow: { [weak self] expanded in
+                    self?.resize(expanded: expanded)
+                }
+            )
+        )
         if #available(macOS 13.0, *) {
             hostingView.sizingOptions = []
         }

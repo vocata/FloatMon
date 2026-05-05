@@ -3,17 +3,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "DynamicIslandMac",
+    name: "FloatMon",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "DynamicIslandMac", targets: ["DynamicIslandMac"])
+        .executable(name: "FloatMon", targets: ["FloatMon"])
     ],
     targets: [
         .executableTarget(
-            name: "DynamicIslandMac",
-            path: "Sources/DynamicIslandMac"
+            name: "FloatMon",
+            path: "Sources/FloatMon"
         )
     ]
 )

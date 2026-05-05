@@ -6,9 +6,9 @@ let resourcesURL = rootURL.appendingPathComponent("Resources", isDirectory: true
 let iconsetURL = resourcesURL.appendingPathComponent("AppIcon.iconset", isDirectory: true)
 let icnsURL = resourcesURL.appendingPathComponent("AppIcon.icns")
 let tiffDirectoryURL = FileManager.default.temporaryDirectory
-    .appendingPathComponent("DynamicIslandMacAppIcon.tiffset", isDirectory: true)
+    .appendingPathComponent("FloatMonAppIcon.tiffset", isDirectory: true)
 let combinedTIFFURL = FileManager.default.temporaryDirectory
-    .appendingPathComponent("DynamicIslandMacAppIcon.tiff")
+    .appendingPathComponent("FloatMonAppIcon.tiff")
 
 try FileManager.default.createDirectory(at: iconsetURL, withIntermediateDirectories: true)
 try? FileManager.default.removeItem(at: tiffDirectoryURL)
