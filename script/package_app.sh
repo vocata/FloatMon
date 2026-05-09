@@ -11,6 +11,10 @@ DIST_DIR="$ROOT_DIR/dist.noindex"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 EXECUTABLE="$ROOT_DIR/.build/debug/$APP_NAME"
 ICON_FILE="$ROOT_DIR/Resources/AppIcon.icns"
+LOGO_FILE="$ROOT_DIR/Resources/logo.png"
+GENERATED_TIFF_DIR="$ROOT_DIR/.build/AppIcon.tiffset"
+GENERATED_TIFF_FILE="$ROOT_DIR/.build/AppIcon.tiff"
+GENERATED_ICON_FILE="$ROOT_DIR/.build/AppIcon.icns"
 
 SWIFTPM_CACHE_DIR="$ROOT_DIR/.build/swiftpm-cache"
 SWIFTPM_CONFIG_DIR="$ROOT_DIR/.build/swiftpm-config"
@@ -48,7 +52,37 @@ create_bundle_layout() {
   mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
   cp "$EXECUTABLE" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-  cp "$ICON_FILE" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+  cp "$(app_icon_file)" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+}
+
+app_icon_file() {
+  if [[ -f "$LOGO_FILE" ]]; then
+    create_icon_from_logo
+    echo "$GENERATED_ICON_FILE"
+  else
+    echo "$ICON_FILE"
+  fi
+}
+
+create_icon_from_logo() {
+  rm -rf "$GENERATED_TIFF_DIR"
+  mkdir -p "$GENERATED_TIFF_DIR"
+
+  /usr/bin/sips -s format tiff -z 16 16 "$LOGO_FILE" --out "$GENERATED_TIFF_DIR/16.tiff" >/dev/null
+  /usr/bin/sips -s format tiff -z 32 32 "$LOGO_FILE" --out "$GENERATED_TIFF_DIR/32.tiff" >/dev/null
+  /usr/bin/sips -s format tiff -z 128 128 "$LOGO_FILE" --out "$GENERATED_TIFF_DIR/128.tiff" >/dev/null
+  /usr/bin/sips -s format tiff -z 256 256 "$LOGO_FILE" --out "$GENERATED_TIFF_DIR/256.tiff" >/dev/null
+  /usr/bin/sips -s format tiff -z 512 512 "$LOGO_FILE" --out "$GENERATED_TIFF_DIR/512.tiff" >/dev/null
+  /usr/bin/sips -s format tiff -z 1024 1024 "$LOGO_FILE" --out "$GENERATED_TIFF_DIR/1024.tiff" >/dev/null
+  /usr/bin/tiffutil -catnosizecheck \
+    "$GENERATED_TIFF_DIR/16.tiff" \
+    "$GENERATED_TIFF_DIR/32.tiff" \
+    "$GENERATED_TIFF_DIR/128.tiff" \
+    "$GENERATED_TIFF_DIR/256.tiff" \
+    "$GENERATED_TIFF_DIR/512.tiff" \
+    "$GENERATED_TIFF_DIR/1024.tiff" \
+    -out "$GENERATED_TIFF_FILE" >/dev/null
+  /usr/bin/tiff2icns "$GENERATED_TIFF_FILE" "$GENERATED_ICON_FILE"
 }
 
 write_info_plist() {

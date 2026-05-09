@@ -4,7 +4,7 @@ CODE_SIGN_IDENTITY ?=
 SWIFT_BUILD_ENV := CLANG_MODULE_CACHE_PATH=$(CURDIR)/.build/module-cache
 SWIFT_BUILD_FLAGS := --disable-sandbox --manifest-cache local --cache-path $(CURDIR)/.build/swiftpm-cache --config-path $(CURDIR)/.build/swiftpm-config --security-path $(CURDIR)/.build/swiftpm-security
 
-.PHONY: build package run install icon stop clean
+.PHONY: build package run install stop clean
 
 build:
 	mkdir -p .build/module-cache .build/swiftpm-cache .build/swiftpm-config .build/swiftpm-security
@@ -18,10 +18,6 @@ install: package
 
 run: package stop
 	/usr/bin/open -n "$(CURDIR)/$(DIST_DIR)/$(APP_NAME).app"
-
-icon:
-	mkdir -p .build/module-cache
-	$(SWIFT_BUILD_ENV) swift script/generate_app_icon.swift
 
 stop:
 	-pkill -x $(APP_NAME)
