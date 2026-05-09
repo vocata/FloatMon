@@ -27,9 +27,8 @@ make package
 make install
 ```
 
-`make package` creates `dist.noindex/FloatMon.app`. If `Resources/logo.png`
-exists, it is converted into the app icon during packaging. If
-`Resources/logo.png` is missing, packaging falls back to `Resources/AppIcon.icns`. If
+`make package` creates `dist.noindex/FloatMon.app`. `Resources/logo.png` is
+converted into the app icon during packaging. If
 `CODE_SIGN_IDENTITY` is set, the bundle is signed with that identity. Otherwise,
 the script tries to find a local development identity and falls back to ad-hoc
 signing.
@@ -51,7 +50,7 @@ make clean    # remove build/package outputs
 - `Sources/FloatMon/Services`: process, app, permission, and window-control services
 - `Sources/FloatMon/Models`: plain data models and sorting/resource logic
 - `script/package_app.sh`: SwiftPM app-bundle packaging
-- `Resources/logo.png`: source image used for the packaged app icon
+- `Resources/logo.png`: required source image for the packaged app icon
 
 ## License
 

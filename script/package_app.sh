@@ -10,7 +10,6 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist.noindex"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 EXECUTABLE="$ROOT_DIR/.build/debug/$APP_NAME"
-ICON_FILE="$ROOT_DIR/Resources/AppIcon.icns"
 LOGO_FILE="$ROOT_DIR/Resources/logo.png"
 GENERATED_TIFF_DIR="$ROOT_DIR/.build/AppIcon.tiffset"
 GENERATED_TIFF_FILE="$ROOT_DIR/.build/AppIcon.tiff"
@@ -52,19 +51,16 @@ create_bundle_layout() {
   mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
   cp "$EXECUTABLE" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-  cp "$(app_icon_file)" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
-}
-
-app_icon_file() {
-  if [[ -f "$LOGO_FILE" ]]; then
-    create_icon_from_logo
-    echo "$GENERATED_ICON_FILE"
-  else
-    echo "$ICON_FILE"
-  fi
+  create_icon_from_logo
+  cp "$GENERATED_ICON_FILE" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 }
 
 create_icon_from_logo() {
+  if [[ ! -f "$LOGO_FILE" ]]; then
+    echo "error: missing required icon source: $LOGO_FILE" >&2
+    exit 1
+  fi
+
   rm -rf "$GENERATED_TIFF_DIR"
   mkdir -p "$GENERATED_TIFF_DIR"
 
