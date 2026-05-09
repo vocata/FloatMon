@@ -26,6 +26,8 @@ struct ProcessRow: View {
 
             Spacer(minLength: 8)
 
+            ResourceTrendView(samples: app.historySamples)
+
             ResourceSummaryView(app: app)
 
             WindowDisclosureView(count: app.windows.count, isExpanded: isExpanded)
@@ -44,10 +46,10 @@ struct ProcessRow: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help("Force quit \(app.name)")
+            .hoverTooltip("Quit")
         }
         .padding(.horizontal, 12)
-        .frame(height: 52)
+        .frame(height: 58)
         .background {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(rowBackground)
@@ -80,7 +82,61 @@ private struct ResourceSummaryView: View {
                 .foregroundStyle(.white.opacity(0.54))
         }
         .monospacedDigit()
-        .frame(width: 86, alignment: .trailing)
+        .frame(width: 96, alignment: .trailing)
+    }
+}
+
+private struct ResourceTrendView: View {
+    let samples: [AppResourceSample]
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.white.opacity(0.045))
+
+            GeometryReader { proxy in
+                trendPath(
+                    values: samples.map(\.memoryBytes).map(Double.init),
+                    in: proxy.size,
+                    scaleFloor: 512 * 1024 * 1024
+                )
+                .stroke(.cyan.opacity(0.72), style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+
+                trendPath(
+                    values: samples.map(\.cpuPercent),
+                    in: proxy.size,
+                    scaleFloor: 100
+                )
+                .stroke(.green.opacity(0.82), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
+            .padding(5)
+        }
+        .frame(width: 72, height: 28)
+        .help("5-minute trend: green CPU, cyan memory")
+    }
+
+    private func trendPath(values: [Double], in size: CGSize, scaleFloor: Double) -> Path {
+        guard !values.isEmpty, size.width > 0, size.height > 0 else { return Path() }
+
+        let maxValue = max(scaleFloor, values.max() ?? scaleFloor)
+        let points = values.suffix(100)
+        let denominator = max(points.count - 1, 1)
+
+        var path = Path()
+        for (index, value) in points.enumerated() {
+            let x = CGFloat(index) / CGFloat(denominator) * size.width
+            let normalized = min(max(value / maxValue, 0), 1)
+            let y = size.height - CGFloat(normalized) * size.height
+            let point = CGPoint(x: x, y: y)
+
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+
+        return path
     }
 }
 

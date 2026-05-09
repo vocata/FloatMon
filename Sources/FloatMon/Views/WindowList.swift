@@ -69,7 +69,7 @@ private struct WindowRow: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .help("Close \(window.title)")
+            .hoverTooltip("Close")
         }
         .frame(height: 28)
         .padding(.leading, 10)

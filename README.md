@@ -25,6 +25,7 @@ instance, and launches the new bundle.
 ```sh
 make package
 make install
+make uninstall
 ```
 
 `make package` creates `dist.noindex/FloatMon.app`. `Resources/logo.png` is
@@ -40,6 +41,8 @@ Accessibility permission again after rebuilds because the app identity changes.
 
 ```sh
 make stop     # stop a running FloatMon process
+make uninstall # remove /Applications/FloatMon.app
+make reset-accessibility # clear FloatMon's Accessibility permission record
 make clean    # remove build/package outputs
 ```
 

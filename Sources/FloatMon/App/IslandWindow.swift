@@ -13,6 +13,14 @@ final class IslandWindow: NSPanel {
     private var collapsedCenterBeforeExpansion: NSPoint?
     private var frameAnimationToken = 0
 
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        false
+    }
+
     init(processStore: ProcessStore) {
         self.processStore = processStore
 
@@ -58,6 +66,9 @@ final class IslandWindow: NSPanel {
 
     func resize(expanded: Bool) {
         let targetFrame = expanded ? expandedFrame() : collapsedFrame()
+        if expanded {
+            makeKeyAndOrderFront(nil)
+        }
         animateFrame(to: targetFrame)
     }
 
