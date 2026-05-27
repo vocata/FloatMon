@@ -10,6 +10,7 @@ final class IslandWindow: NSPanel {
     }
 
     private let processStore: ProcessStore
+    private let agentStore: AgentStore
     private var collapsedCenterBeforeExpansion: NSPoint?
     private var frameAnimationToken = 0
 
@@ -21,8 +22,9 @@ final class IslandWindow: NSPanel {
         false
     }
 
-    init(processStore: ProcessStore) {
+    init(processStore: ProcessStore, agentStore: AgentStore) {
         self.processStore = processStore
+        self.agentStore = agentStore
 
         super.init(
             contentRect: NSRect(origin: .zero, size: Metrics.collapsedSize),
@@ -43,6 +45,7 @@ final class IslandWindow: NSPanel {
         let hostingView = ClearHostingView(
             rootView: IslandView(
                 store: processStore,
+                agentStore: agentStore,
                 resizeWindow: { [weak self] expanded in
                     self?.resize(expanded: expanded)
                 }

@@ -14,14 +14,16 @@ struct IslandView: View {
     private let resizeWindow: (Bool) -> Void
 
     @State private var store: ProcessStore
+    @State private var agentStore: AgentStore
     @State private var expanded = false
     @State private var sortMode: ProcessSortMode = .cpu
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
     @State private var togglePressed = false
 
-    init(store: ProcessStore, resizeWindow: @escaping (Bool) -> Void) {
+    init(store: ProcessStore, agentStore: AgentStore, resizeWindow: @escaping (Bool) -> Void) {
         _store = State(initialValue: store)
+        _agentStore = State(initialValue: agentStore)
         self.resizeWindow = resizeWindow
     }
 
