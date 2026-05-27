@@ -5,14 +5,14 @@ struct AgentMonitorView: View {
     let refresh: () -> Void
 
     private var recentEvents: [AgentEvent] {
-        Array(snapshot.recentEvents.prefix(5))
+        Array(snapshot.recentEvents.prefix(4))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             header
 
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 InfoRow(
                     title: "Thread",
                     value: snapshot.currentThread?.title ?? "No active thread",
@@ -38,8 +38,8 @@ struct AgentMonitorView: View {
             eventsSection
         }
         .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
     }
 
     private var header: some View {
@@ -47,7 +47,7 @@ struct AgentMonitorView: View {
             Image(systemName: "terminal")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.72))
-                .frame(width: 26, height: 26)
+                .frame(width: 24, height: 24)
                 .background {
                     Circle()
                         .fill(.white.opacity(0.09))
@@ -70,7 +70,7 @@ struct AgentMonitorView: View {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.72))
-                    .frame(width: 26, height: 26)
+                    .frame(width: 24, height: 24)
                     .background {
                         Circle()
                             .fill(.white.opacity(0.08))
@@ -83,7 +83,7 @@ struct AgentMonitorView: View {
     }
 
     private var eventsSection: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 5) {
             Text("Recent Events")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.66))
@@ -93,13 +93,13 @@ struct AgentMonitorView: View {
                 Text("No hook events yet")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(0.44))
-                    .frame(maxWidth: .infinity, minHeight: 42, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 34, alignment: .center)
                     .background {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(.white.opacity(0.055))
                     }
             } else {
-                VStack(spacing: 5) {
+                VStack(spacing: 4) {
                     ForEach(recentEvents) { event in
                         EventRow(event: event)
                     }
@@ -156,7 +156,7 @@ private struct InfoRow: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
-        .frame(height: 30)
+        .frame(height: 26)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.white.opacity(0.06))
@@ -186,7 +186,7 @@ private struct EventRow: View {
                 .lineLimit(1)
         }
         .padding(.horizontal, 10)
-        .frame(height: 27)
+        .frame(height: 24)
         .background {
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(.white.opacity(0.045))

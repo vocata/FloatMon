@@ -44,6 +44,7 @@ final class DragView: NSView {
     private var startOrigin: NSPoint?
     private var didDrag = false
     private var pressToken = 0
+    private var pendingClickWorkItem: DispatchWorkItem?
 
     init(coordinator: WindowDragBridge.Coordinator) {
         self.coordinator = coordinator
@@ -118,18 +119,21 @@ final class DragView: NSView {
 
         if shouldClick {
             if event.clickCount >= 2 {
+                cancelPendingClick()
                 coordinator.onDoubleClick()
             } else {
-                coordinator.onClick()
+                scheduleClick()
             }
             releasePressAfterClick()
         } else {
+            cancelPendingClick()
             setPressed(false)
         }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
+            cancelPendingClick()
             clearTracking()
             setPressed(false)
         }
@@ -145,6 +149,23 @@ final class DragView: NSView {
     private func setPressed(_ pressed: Bool) {
         pressToken += 1
         coordinator.onPressChanged(pressed)
+    }
+
+    private func scheduleClick() {
+        cancelPendingClick()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingClickWorkItem = nil
+            coordinator.onClick()
+        }
+        pendingClickWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: workItem)
+    }
+
+    private func cancelPendingClick() {
+        pendingClickWorkItem?.cancel()
+        pendingClickWorkItem = nil
     }
 
     private func releasePressAfterClick() {
