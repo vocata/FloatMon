@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct CodexHookWriter {
@@ -53,13 +54,19 @@ struct CodexHookWriter {
         var line = data
         line.append(UInt8(ascii: "\n"))
 
-        if fileManager.fileExists(atPath: paths.eventsJSONL.path) {
-            let handle = try FileHandle(forWritingTo: paths.eventsJSONL)
-            try handle.seekToEnd()
-            try handle.write(contentsOf: line)
-            try handle.close()
-        } else {
-            try line.write(to: paths.eventsJSONL, options: .atomic)
+        let fd = open(paths.eventsJSONL.path, O_WRONLY | O_CREAT | O_APPEND, mode_t(0o600))
+        guard fd >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer {
+            close(fd)
+        }
+
+        let bytesWritten = line.withUnsafeBytes { buffer in
+            Darwin.write(fd, buffer.baseAddress, buffer.count)
+        }
+        guard bytesWritten == line.count else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
 
