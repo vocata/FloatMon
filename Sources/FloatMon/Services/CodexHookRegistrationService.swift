@@ -16,10 +16,12 @@ struct CodexHookRegistrationService {
 
     let paths: CodexPaths
     private let fileManager: FileManager
+    private let now: () -> Date
 
-    init(paths: CodexPaths = CodexPaths(), fileManager: FileManager = .default) {
+    init(paths: CodexPaths = CodexPaths(), fileManager: FileManager = .default, now: @escaping () -> Date = Date.init) {
         self.paths = paths
         self.fileManager = fileManager
+        self.now = now
     }
 
     func isRegistered(executablePath: String) -> Bool {
@@ -31,8 +33,9 @@ struct CodexHookRegistrationService {
         }
 
         return Self.events.allSatisfy { event in
-            eventHookCommands(for: event, in: hooks)
-                .contains { $0.contains("--floatmon-codex-hook \(event)") && $0.contains(executablePath) }
+            let command = Self.command(executablePath: executablePath, event: event)
+            return eventHookCommands(for: event, in: hooks)
+                .contains(command)
         }
     }
 
@@ -42,7 +45,7 @@ struct CodexHookRegistrationService {
             try #"{"hooks":{}}"#.write(to: paths.hooksJSON, atomically: true, encoding: .utf8)
         }
 
-        let backupURL = paths.backupHooksURL()
+        let backupURL = uniqueBackupHooksURL()
         try fileManager.copyItem(at: paths.hooksJSON, to: backupURL)
 
         var root = try loadRoot()
@@ -61,6 +64,28 @@ struct CodexHookRegistrationService {
         let data = try Data(contentsOf: paths.hooksJSON)
         let object = try JSONSerialization.jsonObject(with: data)
         return object as? [String: Any] ?? ["hooks": [String: Any]()]
+    }
+
+    private func uniqueBackupHooksURL() -> URL {
+        let backupURL = paths.backupHooksURL(now: now())
+        guard fileManager.fileExists(atPath: backupURL.path) else {
+            return backupURL
+        }
+
+        let directoryURL = backupURL.deletingLastPathComponent()
+        let baseName = backupURL.deletingPathExtension().lastPathComponent
+        let pathExtension = backupURL.pathExtension
+        var index = 1
+
+        while true {
+            let candidate = directoryURL
+                .appendingPathComponent("\(baseName).\(index)")
+                .appendingPathExtension(pathExtension)
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            index += 1
+        }
     }
 
     private func eventHookCommands(for event: String, in hooks: [String: Any]) -> [String] {

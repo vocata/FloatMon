@@ -57,4 +57,30 @@ final class CodexHookRegistrationServiceTests: XCTestCase {
         let occurrences = output.components(separatedBy: "--floatmon-codex-hook SessionStart").count - 1
         XCTAssertEqual(occurrences, 1)
     }
+
+    func testIsRegisteredMatchesEscapedExecutablePath() throws {
+        let hooksURL = root.appendingPathComponent("hooks.json")
+        try #"{"hooks":{}}"#.write(to: hooksURL, atomically: true, encoding: .utf8)
+        let executablePath = "/tmp/O'Brien/FloatMon"
+        let service = CodexHookRegistrationService(paths: CodexPaths(codexHome: root))
+
+        _ = try service.register(executablePath: executablePath)
+
+        XCTAssertTrue(service.isRegistered(executablePath: executablePath))
+    }
+
+    func testRegisterUsesDistinctBackupURLWhenTimestampCollides() throws {
+        let hooksURL = root.appendingPathComponent("hooks.json")
+        try #"{"hooks":{}}"#.write(to: hooksURL, atomically: true, encoding: .utf8)
+        let fixedNow = Date(timeIntervalSince1970: 1_800_000_000)
+        let paths = CodexPaths(codexHome: root)
+        let firstBackupURL = paths.backupHooksURL(now: fixedNow)
+        try "existing backup".write(to: firstBackupURL, atomically: true, encoding: .utf8)
+        let service = CodexHookRegistrationService(paths: paths, now: { fixedNow })
+
+        let result = try service.register(executablePath: "/tmp/FloatMon")
+
+        XCTAssertNotEqual(result.backupURL, firstBackupURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.backupURL.path))
+    }
 }
