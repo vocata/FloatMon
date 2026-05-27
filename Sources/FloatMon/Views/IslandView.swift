@@ -16,6 +16,7 @@ struct IslandView: View {
     @State private var store: ProcessStore
     @State private var agentStore: AgentStore
     @State private var expanded = false
+    @State private var monitorMode: AgentMonitorMode = .apps
     @State private var sortMode: ProcessSortMode = .cpu
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
@@ -106,15 +107,27 @@ struct IslandView: View {
                     .overlay(.white.opacity(0.12))
                     .padding(.horizontal, 18)
 
-                ExpandedProcessList(
-                    apps: store.apps,
-                    sortMode: $sortMode,
-                    activate: activateApp,
-                    focusWindow: focusWindow,
-                    closeWindow: closeWindow,
-                    requestForceQuit: { pendingForceQuitApp = $0 }
-                )
-                .transition(.opacity)
+                modeSwitcher
+                    .padding(.horizontal, 18)
+                    .padding(.top, 12)
+
+                if monitorMode == .apps {
+                    ExpandedProcessList(
+                        apps: store.apps,
+                        sortMode: $sortMode,
+                        activate: activateApp,
+                        focusWindow: focusWindow,
+                        closeWindow: closeWindow,
+                        requestForceQuit: { pendingForceQuitApp = $0 }
+                    )
+                    .transition(.opacity)
+                } else {
+                    AgentMonitorView(
+                        snapshot: agentStore.snapshot,
+                        refresh: { agentStore.refresh() }
+                    )
+                    .transition(.opacity)
+                }
             }
         }
         .frame(width: islandVisualSize.width, height: islandVisualSize.height, alignment: .top)
@@ -142,9 +155,37 @@ struct IslandView: View {
         .overlay(
             WindowDragBridge(
                 onClick: toggleExpanded,
+                onDoubleClick: toggleMonitorMode,
                 onPressChanged: { togglePressed = $0 }
             )
         )
+    }
+
+    private var modeSwitcher: some View {
+        HStack(spacing: 4) {
+            ForEach(AgentMonitorMode.allCases) { mode in
+                Button {
+                    setMonitorMode(mode)
+                } label: {
+                    Text(mode.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(monitorMode == mode ? .white : .white.opacity(0.54))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 26)
+                        .background {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(monitorMode == mode ? .white.opacity(0.14) : .clear)
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.white.opacity(0.065))
+        }
     }
 
     private var expandedHeader: some View {
@@ -183,19 +224,47 @@ struct IslandView: View {
     }
 
     private var collapsedHeader: some View {
-        ZStack(alignment: .bottomTrailing) {
-            AppIconView(image: featuredApp?.icon, size: 38)
-
-            Circle()
-                .fill(featuredPressureColor)
-                .frame(width: 9, height: 9)
-                .overlay {
-                    Circle()
-                        .stroke(.black.opacity(0.92), lineWidth: 2)
-                }
-                .offset(x: 1, y: 1)
+        Group {
+            if monitorMode == .apps {
+                collapsedAppHeader
+            } else {
+                collapsedAgentHeader
+            }
         }
         .frame(width: 64, height: 64)
+    }
+
+    private var collapsedAppHeader: some View {
+        ZStack(alignment: .bottomTrailing) {
+            AppIconView(image: featuredApp?.icon, size: 38)
+            statusDot(color: featuredPressureColor)
+        }
+    }
+
+    private var collapsedAgentHeader: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Image(systemName: "terminal")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.86))
+                .frame(width: 42, height: 42)
+                .background {
+                    Circle()
+                        .fill(.white.opacity(0.10))
+                }
+
+            statusDot(color: agentStatusColor)
+        }
+    }
+
+    private func statusDot(color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: 9, height: 9)
+            .overlay {
+                Circle()
+                    .stroke(.black.opacity(0.92), lineWidth: 2)
+            }
+            .offset(x: 1, y: 1)
     }
 
     private var containerShape: AnyShape {
@@ -223,6 +292,21 @@ struct IslandView: View {
         }
     }
 
+    private var agentStatusColor: Color {
+        switch agentStore.snapshot.activityStatus {
+        case .idle:
+            return .gray
+        case .running:
+            return .green
+        case .waiting:
+            return .orange
+        case .completed:
+            return .cyan
+        case .failed:
+            return .red
+        }
+    }
+
     private func toggleExpanded() {
         let nextExpanded = !expanded
         resizeWindow(nextExpanded)
@@ -231,6 +315,16 @@ struct IslandView: View {
         }
         if nextExpanded {
             refreshAfterExpansion()
+        }
+    }
+
+    private func toggleMonitorMode() {
+        setMonitorMode(monitorMode == .apps ? .agent : .apps)
+    }
+
+    private func setMonitorMode(_ mode: AgentMonitorMode) {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            monitorMode = mode
         }
     }
 

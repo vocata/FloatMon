@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WindowDragBridge: NSViewRepresentable {
     let onClick: () -> Void
+    var onDoubleClick: () -> Void = {}
     var onPressChanged: (Bool) -> Void = { _ in }
 
     func makeNSView(context: Context) -> DragView {
@@ -11,19 +12,26 @@ struct WindowDragBridge: NSViewRepresentable {
 
     func updateNSView(_ nsView: DragView, context: Context) {
         context.coordinator.onClick = onClick
+        context.coordinator.onDoubleClick = onDoubleClick
         context.coordinator.onPressChanged = onPressChanged
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onClick: onClick, onPressChanged: onPressChanged)
+        Coordinator(onClick: onClick, onDoubleClick: onDoubleClick, onPressChanged: onPressChanged)
     }
 
     final class Coordinator {
         var onClick: () -> Void
+        var onDoubleClick: () -> Void
         var onPressChanged: (Bool) -> Void
 
-        init(onClick: @escaping () -> Void, onPressChanged: @escaping (Bool) -> Void) {
+        init(
+            onClick: @escaping () -> Void,
+            onDoubleClick: @escaping () -> Void,
+            onPressChanged: @escaping (Bool) -> Void
+        ) {
             self.onClick = onClick
+            self.onDoubleClick = onDoubleClick
             self.onPressChanged = onPressChanged
         }
     }
@@ -109,7 +117,11 @@ final class DragView: NSView {
         clearTracking()
 
         if shouldClick {
-            coordinator.onClick()
+            if event.clickCount >= 2 {
+                coordinator.onDoubleClick()
+            } else {
+                coordinator.onClick()
+            }
             releasePressAfterClick()
         } else {
             setPressed(false)
