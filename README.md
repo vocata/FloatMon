@@ -4,6 +4,13 @@ FloatMon is a small macOS utility that lives as a draggable floating ball.
 It highlights the app using the most CPU or memory, expands into an app list, and
 can jump to individual app windows when Accessibility permission is granted.
 
+## Agent Monitoring
+
+Double-click the floating ball to switch between app monitoring and agent monitoring.
+The current MVP monitors Codex. On startup, FloatMon can register a Codex hook after
+confirmation. Before editing `~/.codex/hooks.json`, it writes a timestamped backup
+next to the original file.
+
 ## Requirements
 
 - macOS 14 or newer
