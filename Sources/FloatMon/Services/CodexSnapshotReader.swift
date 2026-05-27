@@ -3,6 +3,22 @@ import Foundation
 struct CodexSnapshotReader {
     let paths: CodexPaths
 
+    private struct ThreadRow: Decodable {
+        let id: String
+        let title: String
+        let cwd: String
+        let tokensUsed: Int
+        let updatedAtMS: Double
+    }
+
+    private struct GoalRow: Decodable {
+        let objective: String
+        let status: String
+        let tokenBudget: Int?
+        let tokensUsed: Int
+        let timeUsedSeconds: Int
+    }
+
     init(paths: CodexPaths = CodexPaths()) {
         self.paths = paths
     }
@@ -43,42 +59,38 @@ struct CodexSnapshotReader {
 
     private func readCurrentThread() -> AgentThreadSummary? {
         guard FileManager.default.fileExists(atPath: paths.stateSQLite.path) else { return nil }
-        let query = "select id,title,cwd,tokens_used,updated_at_ms from threads order by updated_at_ms desc limit 1;"
-        guard let line = runSQLite(path: paths.stateSQLite.path, query: query)?.first else { return nil }
-        let fields = line.components(separatedBy: "|")
-        guard fields.count >= 5 else { return nil }
+        let query = "select id, title, cwd, tokens_used as tokensUsed, updated_at_ms as updatedAtMS from threads order by updated_at_ms desc limit 1;"
+        guard let row: ThreadRow = runSQLite(path: paths.stateSQLite.path, query: query)?.first else { return nil }
 
         return AgentThreadSummary(
-            id: fields[0],
-            title: fields[1].isEmpty ? "Untitled Codex thread" : fields[1],
-            cwd: fields[2],
-            tokensUsed: Int(fields[3]) ?? 0,
-            updatedAt: Date(timeIntervalSince1970: (Double(fields[4]) ?? 0) / 1000)
+            id: row.id,
+            title: row.title.isEmpty ? "Untitled Codex thread" : row.title,
+            cwd: row.cwd,
+            tokensUsed: row.tokensUsed,
+            updatedAt: Date(timeIntervalSince1970: row.updatedAtMS / 1000)
         )
     }
 
     private func readGoal(threadID: String) -> AgentGoalSummary? {
         guard FileManager.default.fileExists(atPath: paths.goalsSQLite.path) else { return nil }
         let escapedThreadID = threadID.replacingOccurrences(of: "'", with: "''")
-        let query = "select objective,status,coalesce(token_budget,''),tokens_used,time_used_seconds from thread_goals where thread_id='\(escapedThreadID)' limit 1;"
-        guard let line = runSQLite(path: paths.goalsSQLite.path, query: query)?.first else { return nil }
-        let fields = line.components(separatedBy: "|")
-        guard fields.count >= 5 else { return nil }
+        let query = "select objective, status, token_budget as tokenBudget, tokens_used as tokensUsed, time_used_seconds as timeUsedSeconds from thread_goals where thread_id='\(escapedThreadID)' limit 1;"
+        guard let row: GoalRow = runSQLite(path: paths.goalsSQLite.path, query: query)?.first else { return nil }
 
         return AgentGoalSummary(
-            objective: fields[0],
-            status: fields[1],
-            tokenBudget: fields[2].isEmpty ? nil : Int(fields[2]),
-            tokensUsed: Int(fields[3]) ?? 0,
-            timeUsedSeconds: Int(fields[4]) ?? 0
+            objective: row.objective,
+            status: row.status,
+            tokenBudget: row.tokenBudget,
+            tokensUsed: row.tokensUsed,
+            timeUsedSeconds: row.timeUsedSeconds
         )
     }
 
-    private func runSQLite(path: String, query: String) -> [String]? {
+    private func runSQLite<Row: Decodable>(path: String, query: String) -> [Row]? {
         let process = Process()
         let output = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [path, query]
+        process.arguments = ["-json", path, query]
         process.standardOutput = output
         process.standardError = Pipe()
 
@@ -91,9 +103,6 @@ struct CodexSnapshotReader {
 
         guard process.terminationStatus == 0 else { return nil }
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        let text = String(data: data, encoding: .utf8) ?? ""
-        return text
-            .split(separator: "\n")
-            .map(String.init)
+        return try? JSONDecoder().decode([Row].self, from: data)
     }
 }
