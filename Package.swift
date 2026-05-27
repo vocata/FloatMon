@@ -14,6 +14,11 @@ let package = Package(
         .executableTarget(
             name: "FloatMon",
             path: "Sources/FloatMon"
+        ),
+        .testTarget(
+            name: "FloatMonTests",
+            dependencies: ["FloatMon"],
+            path: "Tests/FloatMonTests"
         )
     ]
 )
