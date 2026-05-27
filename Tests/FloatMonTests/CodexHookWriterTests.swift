@@ -64,23 +64,32 @@ final class CodexHookWriterTests: XCTestCase {
         XCTAssertEqual(events[0].status, .waiting)
     }
 
-    func testCreatesEventsFileReadableOnlyByOwner() throws {
+    func testCreatesOutputFilesReadableOnlyByOwner() throws {
         let writer = CodexHookWriter(paths: CodexPaths(codexHome: root))
         let payload = #"{"thread_id":"thread-1","tool_name":"exec_command"}"#.data(using: .utf8)!
 
         try writer.write(eventType: "PreToolUse", stdinData: payload)
 
-        let attributes = try FileManager.default.attributesOfItem(atPath: eventsURL.path)
-        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
-        XCTAssertEqual(permissions.intValue & 0o777, 0o600)
+        XCTAssertEqual(try permissions(for: eventsURL), 0o600)
+        XCTAssertEqual(try permissions(for: stateURL), 0o600)
     }
 
     private var eventsURL: URL {
         root.appendingPathComponent("floatmon/events.jsonl")
     }
 
+    private var stateURL: URL {
+        root.appendingPathComponent("floatmon/state.json")
+    }
+
     private func eventLines() throws -> [String] {
         let events = try String(contentsOf: eventsURL, encoding: .utf8)
         return events.split(separator: "\n").map(String.init)
+    }
+
+    private func permissions(for url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
+        return permissions.intValue & 0o777
     }
 }
