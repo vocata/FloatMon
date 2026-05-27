@@ -1,6 +1,7 @@
 .build/
 .codex/
 .swiftpm/
+.worktrees/
 dist/
 dist.noindex/
 .DS_Store
