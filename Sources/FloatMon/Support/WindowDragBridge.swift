@@ -1,9 +1,18 @@
 import AppKit
 import SwiftUI
 
+enum WindowClickResolution: Equatable {
+    case performClickImmediately
+}
+
+enum WindowClickPolicy {
+    static func resolution(clickCount: Int) -> WindowClickResolution {
+        .performClickImmediately
+    }
+}
+
 struct WindowDragBridge: NSViewRepresentable {
     let onClick: () -> Void
-    var onDoubleClick: () -> Void = {}
     var onPressChanged: (Bool) -> Void = { _ in }
 
     func makeNSView(context: Context) -> DragView {
@@ -12,26 +21,25 @@ struct WindowDragBridge: NSViewRepresentable {
 
     func updateNSView(_ nsView: DragView, context: Context) {
         context.coordinator.onClick = onClick
-        context.coordinator.onDoubleClick = onDoubleClick
         context.coordinator.onPressChanged = onPressChanged
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onClick: onClick, onDoubleClick: onDoubleClick, onPressChanged: onPressChanged)
+        Coordinator(
+            onClick: onClick,
+            onPressChanged: onPressChanged
+        )
     }
 
     final class Coordinator {
         var onClick: () -> Void
-        var onDoubleClick: () -> Void
         var onPressChanged: (Bool) -> Void
 
         init(
             onClick: @escaping () -> Void,
-            onDoubleClick: @escaping () -> Void,
             onPressChanged: @escaping (Bool) -> Void
         ) {
             self.onClick = onClick
-            self.onDoubleClick = onDoubleClick
             self.onPressChanged = onPressChanged
         }
     }
@@ -44,7 +52,6 @@ final class DragView: NSView {
     private var startOrigin: NSPoint?
     private var didDrag = false
     private var pressToken = 0
-    private var pendingClickWorkItem: DispatchWorkItem?
 
     init(coordinator: WindowDragBridge.Coordinator) {
         self.coordinator = coordinator
@@ -67,6 +74,10 @@ final class DragView: NSView {
         guard let window = window as? IslandWindow else {
             super.mouseDown(with: event)
             return
+        }
+
+        Task { @MainActor in
+            ExternalHoverTooltipController.beginPointerInteraction()
         }
 
         startMouse = NSEvent.mouseLocation
@@ -96,6 +107,9 @@ final class DragView: NSView {
 
         if !didDrag {
             didDrag = true
+            Task { @MainActor in
+                ExternalHoverTooltipController.beginPointerInteraction()
+            }
             setPressed(false)
         }
 
@@ -118,24 +132,27 @@ final class DragView: NSView {
         clearTracking()
 
         if shouldClick {
-            if event.clickCount >= 2 {
-                cancelPendingClick()
-                coordinator.onDoubleClick()
-            } else {
-                scheduleClick()
+            switch WindowClickPolicy.resolution(clickCount: event.clickCount) {
+            case .performClickImmediately:
+                coordinator.onClick()
             }
             releasePressAfterClick()
         } else {
-            cancelPendingClick()
             setPressed(false)
+        }
+
+        Task { @MainActor in
+            ExternalHoverTooltipController.endPointerInteraction()
         }
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
-            cancelPendingClick()
             clearTracking()
             setPressed(false)
+            Task { @MainActor in
+                ExternalHoverTooltipController.endPointerInteraction()
+            }
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -151,23 +168,6 @@ final class DragView: NSView {
         coordinator.onPressChanged(pressed)
     }
 
-    private func scheduleClick() {
-        cancelPendingClick()
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            pendingClickWorkItem = nil
-            coordinator.onClick()
-        }
-        pendingClickWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: workItem)
-    }
-
-    private func cancelPendingClick() {
-        pendingClickWorkItem?.cancel()
-        pendingClickWorkItem = nil
-    }
-
     private func releasePressAfterClick() {
         let token = pressToken
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
@@ -175,4 +175,5 @@ final class DragView: NSView {
             setPressed(false)
         }
     }
+
 }

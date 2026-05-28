@@ -4,7 +4,7 @@ struct IslandView: View {
     private enum Metrics {
         static let collapsedWindowDiameter: CGFloat = 68
         static let collapsedBallDiameter: CGFloat = 64
-        static let expandedSize = CGSize(width: 520, height: 390)
+        static let expandedSize = CGSize(width: 520, height: 460)
         static let animation = Animation.easeInOut(duration: 0.26)
         static let pressAnimation = Animation.easeOut(duration: 0.10)
         static let refreshDelayMilliseconds = 280
@@ -124,7 +124,8 @@ struct IslandView: View {
                 } else {
                     AgentMonitorView(
                         snapshot: agentStore.snapshot,
-                        refresh: { agentStore.refresh() }
+                        refresh: { agentStore.refreshHookStatus() },
+                        registerHook: { agentStore.registerCodexHook() }
                     )
                     .transition(.opacity)
                 }
@@ -155,7 +156,6 @@ struct IslandView: View {
         .overlay(
             WindowDragBridge(
                 onClick: toggleExpanded,
-                onDoubleClick: toggleMonitorMode,
                 onPressChanged: { togglePressed = $0 }
             )
         )
@@ -173,6 +173,7 @@ struct IslandView: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                         .frame(height: 26)
+                        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                         .background {
                             RoundedRectangle(cornerRadius: 9, style: .continuous)
                                 .fill(monitorMode == mode ? .white.opacity(0.14) : .clear)
@@ -239,21 +240,28 @@ struct IslandView: View {
             AppIconView(image: featuredApp?.icon, size: 38)
             statusDot(color: featuredPressureColor)
         }
+        .externalHoverCard(
+            title: featuredApp?.name ?? "No open apps",
+            subtitle: collapsedAppSubtitle,
+            systemImage: "app.fill",
+            tone: featuredPressureTone
+        )
     }
 
     private var collapsedAgentHeader: some View {
         ZStack(alignment: .bottomTrailing) {
-            Image(systemName: "terminal")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.86))
+            AgentIcon(size: 42, symbolSize: 24)
                 .frame(width: 42, height: 42)
-                .background {
-                    Circle()
-                        .fill(.white.opacity(0.10))
-                }
 
             statusDot(color: agentStatusColor)
         }
+        .externalHoverCard(
+            title: agentStore.snapshot.provider.displayName,
+            subtitle: agentStore.snapshot.hookStatus.label,
+            detailLines: collapsedAgentDetailLines,
+            systemImage: "terminal",
+            tone: agentStatusTone
+        )
     }
 
     private func statusDot(color: Color) -> some View {
@@ -292,19 +300,78 @@ struct IslandView: View {
         }
     }
 
-    private var agentStatusColor: Color {
-        switch agentStore.snapshot.activityStatus {
-        case .idle:
-            return .gray
-        case .running:
+    private var featuredPressureTone: ExternalHoverTooltipTone {
+        switch featuredPressure {
+        case .none:
+            return .neutral
+        case .low:
             return .green
-        case .waiting:
+        case .medium:
             return .orange
-        case .completed:
-            return .cyan
-        case .failed:
+        case .high:
             return .red
         }
+    }
+
+    private var agentStatusColor: Color {
+        switch agentStore.snapshot.latestEventType {
+        case "PreToolUse":
+            return Color(red: 0.00, green: 0.62, blue: 1.00)
+        case "PermissionRequest":
+            return Color(red: 1.00, green: 0.58, blue: 0.08)
+        case "PostToolUse", "Stop":
+            return Color(red: 0.20, green: 0.92, blue: 0.38)
+        case "UserPromptSubmit":
+            return Color(red: 0.18, green: 0.46, blue: 1.00)
+        case "SessionStart":
+            return Color(red: 0.56, green: 0.58, blue: 0.62)
+        default:
+            return .gray
+        }
+    }
+
+    private var agentStatusTone: ExternalHoverTooltipTone {
+        switch agentStore.snapshot.latestEventType {
+        case "PreToolUse":
+            return .cyan
+        case "PermissionRequest":
+            return .orange
+        case "PostToolUse", "Stop":
+            return .green
+        case "UserPromptSubmit":
+            return .blue
+        case "SessionStart":
+            return .neutral
+        default:
+            return .neutral
+        }
+    }
+
+    private var collapsedAppSubtitle: String? {
+        guard let featuredApp else {
+            return nil
+        }
+
+        return "\(AppFormatters.cpu(featuredApp.cpuPercent)) CPU · \(AppFormatters.memory(featuredApp.memoryBytes))"
+    }
+
+    private var collapsedAgentDetailLines: [String] {
+        let snapshot = agentStore.snapshot
+        var lines: [String] = []
+
+        if let thread = snapshot.currentThread {
+            lines.append("Thread: \(thread.title)")
+            lines.append("Workspace: \(URL(fileURLWithPath: thread.cwd).lastPathComponent)")
+            lines.append("Tokens: \(AppFormatters.integer(thread.tokensUsed))")
+        } else {
+            lines.append("No active thread")
+        }
+
+        if let latestEventType = snapshot.latestEventType {
+            lines.append("Latest: \(latestEventType)")
+        }
+
+        return lines
     }
 
     private func toggleExpanded() {
@@ -318,13 +385,12 @@ struct IslandView: View {
         }
     }
 
-    private func toggleMonitorMode() {
-        setMonitorMode(monitorMode == .apps ? .agent : .apps)
-    }
-
     private func setMonitorMode(_ mode: AgentMonitorMode) {
         withAnimation(.easeInOut(duration: 0.16)) {
             monitorMode = mode
+        }
+        if mode == .agent {
+            agentStore.refreshHookStatus()
         }
     }
 

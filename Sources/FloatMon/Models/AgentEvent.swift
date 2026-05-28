@@ -1,16 +1,8 @@
 import Foundation
 
 struct AgentEvent: Codable, Equatable, Identifiable {
-    enum Status: String, Codable {
-        case idle
-        case running
-        case waiting
-        case completed
-        case failed
-    }
-
     var id: String {
-        "\(provider.rawValue)-\(type)-\(timestamp.timeIntervalSince1970)-\(threadID ?? "none")-\(toolName ?? "none")"
+        "\(provider.rawValue)-\(type)-\(timestamp.timeIntervalSince1970)-\(threadID ?? "none")-\(toolName ?? "none")-\(detail ?? "none")-\(message ?? "none")"
     }
 
     let provider: AgentProvider
@@ -18,7 +10,14 @@ struct AgentEvent: Codable, Equatable, Identifiable {
     let timestamp: Date
     let threadID: String?
     let toolName: String?
-    let status: Status
+    let detail: String?
+    let message: String?
+
+    var isRich: Bool {
+        if let detail, !detail.isEmpty { return true }
+        if let message, !message.isEmpty { return true }
+        return false
+    }
 
     private enum CodingKeys: String, CodingKey {
         case provider
@@ -26,7 +25,8 @@ struct AgentEvent: Codable, Equatable, Identifiable {
         case timestamp
         case threadID
         case toolName
-        case status
+        case detail
+        case message
     }
 
     init(
@@ -35,14 +35,16 @@ struct AgentEvent: Codable, Equatable, Identifiable {
         timestamp: Date,
         threadID: String?,
         toolName: String?,
-        status: Status
+        detail: String? = nil,
+        message: String? = nil
     ) {
         self.provider = provider
         self.type = type
         self.timestamp = timestamp
         self.threadID = threadID
         self.toolName = toolName
-        self.status = status
+        self.detail = detail
+        self.message = message
     }
 
     init(from decoder: Decoder) throws {
@@ -53,7 +55,8 @@ struct AgentEvent: Codable, Equatable, Identifiable {
         timestamp = Date(timeIntervalSince1970: timestampSeconds)
         threadID = try container.decodeIfPresent(String.self, forKey: .threadID)
         toolName = try container.decodeIfPresent(String.self, forKey: .toolName)
-        status = try container.decode(Status.self, forKey: .status)
+        detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -63,7 +66,8 @@ struct AgentEvent: Codable, Equatable, Identifiable {
         try container.encode(timestamp.timeIntervalSince1970, forKey: .timestamp)
         try container.encodeIfPresent(threadID, forKey: .threadID)
         try container.encodeIfPresent(toolName, forKey: .toolName)
-        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(detail, forKey: .detail)
+        try container.encodeIfPresent(message, forKey: .message)
     }
 
     static func decodeJSONLine(_ line: String) throws -> AgentEvent {

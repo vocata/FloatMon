@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HoverTooltipModifier: ViewModifier {
     let text: String
+    var allowsMultiline = false
     @State private var isHovering = false
     @State private var isVisible = false
     @State private var hoverToken = 0
@@ -13,15 +14,16 @@ struct HoverTooltipModifier: ViewModifier {
                     Text(text)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.68))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+                        .lineLimit(allowsMultiline ? 8 : 1)
+                        .fixedSize(horizontal: !allowsMultiline, vertical: allowsMultiline)
+                        .frame(maxWidth: allowsMultiline ? 340 : nil, alignment: .leading)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .background {
-                            Capsule()
+                            RoundedRectangle(cornerRadius: allowsMultiline ? 10 : 999, style: .continuous)
                                 .fill(.black.opacity(0.52))
                                 .overlay {
-                                    Capsule()
+                                    RoundedRectangle(cornerRadius: allowsMultiline ? 10 : 999, style: .continuous)
                                         .stroke(.white.opacity(0.07), lineWidth: 1)
                                 }
                                 .shadow(color: .black.opacity(0.16), radius: 6, y: 2)
@@ -61,5 +63,9 @@ struct HoverTooltipModifier: ViewModifier {
 extension View {
     func hoverTooltip(_ text: String) -> some View {
         modifier(HoverTooltipModifier(text: text))
+    }
+
+    func hoverDetailTooltip(_ text: String) -> some View {
+        modifier(HoverTooltipModifier(text: text, allowsMultiline: true))
     }
 }

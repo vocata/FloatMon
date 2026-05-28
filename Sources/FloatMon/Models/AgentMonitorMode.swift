@@ -11,7 +11,7 @@ enum AgentMonitorMode: String, CaseIterable, Identifiable {
         case .apps:
             return "Apps"
         case .agent:
-            return "Agent"
+            return "Agents"
         }
     }
 }

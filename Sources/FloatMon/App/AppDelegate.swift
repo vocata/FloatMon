@@ -7,7 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionWindow: NSWindow?
     private var processStore: ProcessStore?
     private var agentStore: AgentStore?
-    private var didShowHookPrompt = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -74,7 +73,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let islandWindow {
             islandWindow.orderFrontRegardless()
-            maybePromptForCodexHook()
             return
         }
 
@@ -85,28 +83,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = IslandWindow(processStore: processStore, agentStore: agentStore)
         islandWindow = window
         window.show()
-        maybePromptForCodexHook()
-    }
-
-    private func maybePromptForCodexHook() {
-        guard !didShowHookPrompt,
-              let agentStore,
-              agentStore.shouldPromptForCodexHook else {
-            return
-        }
-
-        didShowHookPrompt = true
-
-        let alert = NSAlert()
-        alert.messageText = "Register Codex monitoring hook?"
-        alert.informativeText = "FloatMon can monitor Codex live events by adding a hook command to ~/.codex/hooks.json. The current hooks file will be backed up before change."
-        alert.addButton(withTitle: "Register")
-        alert.addButton(withTitle: "Skip")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            agentStore.registerCodexHook()
-        } else {
-            agentStore.declineHookRegistration()
-        }
     }
 }

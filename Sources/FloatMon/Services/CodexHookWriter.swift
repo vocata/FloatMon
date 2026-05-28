@@ -4,7 +4,6 @@ import Foundation
 struct CodexHookWriter {
     struct LatestState: Codable {
         let provider: AgentProvider
-        let activityStatus: AgentEvent.Status
         let lastEvent: AgentEvent
     }
 
@@ -17,7 +16,6 @@ struct CodexHookWriter {
     }
 
     func write(eventType: String, stdinData: Data) throws {
-        try fileManager.createDirectory(at: paths.floatMonDirectory, withIntermediateDirectories: true)
         let metadata = Self.metadata(from: stdinData)
         let event = AgentEvent(
             provider: .codex,
@@ -25,7 +23,8 @@ struct CodexHookWriter {
             timestamp: Date(),
             threadID: metadata.threadID,
             toolName: metadata.toolName,
-            status: Self.status(for: eventType)
+            detail: metadata.detail(for: eventType),
+            message: metadata.message
         )
         try append(event)
         try writeLatestState(for: event)
@@ -54,7 +53,12 @@ struct CodexHookWriter {
         var line = data
         line.append(UInt8(ascii: "\n"))
 
-        let fd = open(paths.eventsJSONL.path, O_WRONLY | O_CREAT | O_APPEND, mode_t(0o600))
+        let eventLogURL = paths.eventLogURL(threadID: event.threadID)
+        try fileManager.createDirectory(
+            at: eventLogURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let fd = open(eventLogURL.path, O_WRONLY | O_CREAT | O_APPEND, mode_t(0o600))
         guard fd >= 0 else {
             throw Self.posixError()
         }
@@ -88,7 +92,7 @@ struct CodexHookWriter {
     }
 
     private func writeLatestState(for event: AgentEvent) throws {
-        let state = LatestState(provider: .codex, activityStatus: event.status, lastEvent: event)
+        let state = LatestState(provider: .codex, lastEvent: event)
         let data = try JSONEncoder.floatMon.encode(state)
         try data.write(to: paths.stateJSON, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: paths.stateJSON.path)
@@ -97,35 +101,133 @@ struct CodexHookWriter {
     private struct Metadata {
         let threadID: String?
         let toolName: String?
+        let source: String?
+        let prompt: String?
+        let toolInputDetail: String?
+        let toolResponseDetail: String?
+        let message: String?
+
+        func detail(for eventType: String) -> String? {
+            switch eventType {
+            case "SessionStart":
+                return source.map { "source: \($0)" }
+            case "UserPromptSubmit":
+                return prompt.map { "prompt: \($0)" }
+            case "PreToolUse", "PermissionRequest":
+                return toolInputDetail
+            case "PostToolUse":
+                return postToolUseDetail
+            case "Stop":
+                return message == nil ? nil : "Assistant response"
+            default:
+                return toolInputDetail ?? prompt ?? source
+            }
+        }
+
+        private var postToolUseDetail: String? {
+            switch (toolInputDetail, toolResponseDetail) {
+            case let (input?, response?):
+                return "Input:\n\(input)\n\nOutput:\n\(response)"
+            case let (input?, nil):
+                return input
+            case let (nil, response?):
+                return response
+            case (nil, nil):
+                return nil
+            }
+        }
     }
 
     private static func metadata(from data: Data) -> Metadata {
         guard
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
-            return Metadata(threadID: nil, toolName: nil)
+            return Metadata(
+                threadID: nil,
+                toolName: nil,
+                source: nil,
+                prompt: nil,
+                toolInputDetail: nil,
+                toolResponseDetail: nil,
+                message: nil
+            )
         }
 
         let threadID = object["thread_id"] as? String
             ?? object["threadId"] as? String
             ?? object["threadID"] as? String
+            ?? object["turn_id"] as? String
+            ?? object["turnId"] as? String
+            ?? object["session_id"] as? String
+            ?? object["sessionId"] as? String
+            ?? object["sessionID"] as? String
         let toolName = object["tool_name"] as? String
             ?? object["toolName"] as? String
             ?? object["tool"] as? String
-        return Metadata(threadID: threadID, toolName: toolName)
+        let source = object["source"] as? String
+        let prompt = normalizedText(object["prompt"], limit: 2_000, preserveWhitespace: false)
+        let toolInputDetail = summary(from: object["tool_input"] ?? object["toolInput"], limit: 12_000, preserveWhitespace: true)
+        let toolResponseDetail = summary(from: object["tool_response"] ?? object["toolResponse"], limit: 12_000, preserveWhitespace: true)
+        let message = normalizedSummary(
+            object["last_assistant_message"]
+                ?? object["lastAssistantMessage"]
+                ?? object["message"]
+                ?? object["content"],
+            limit: 2_000
+        )
+        return Metadata(
+            threadID: threadID,
+            toolName: toolName,
+            source: source,
+            prompt: prompt,
+            toolInputDetail: toolInputDetail,
+            toolResponseDetail: toolResponseDetail,
+            message: message
+        )
     }
 
-    private static func status(for eventType: String) -> AgentEvent.Status {
-        switch eventType {
-        case "PreToolUse":
-            return .running
-        case "PermissionRequest":
-            return .waiting
-        case "PostToolUse", "Stop":
-            return .completed
-        default:
-            return .idle
+    private static func summary(from value: Any?, limit: Int = 180, preserveWhitespace: Bool = false) -> String? {
+        if let string = value as? String {
+            return normalizedText(string, limit: limit, preserveWhitespace: preserveWhitespace)
         }
+
+        if let object = value as? [String: Any] {
+            if let command = normalizedText(object["command"], limit: limit, preserveWhitespace: preserveWhitespace) {
+                return command
+            }
+            if let description = normalizedText(object["description"], limit: limit, preserveWhitespace: preserveWhitespace) {
+                return description
+            }
+        }
+
+        guard let value else { return nil }
+        guard JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+              let string = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return normalizedText(string, limit: limit, preserveWhitespace: preserveWhitespace)
+    }
+
+    private static func normalizedSummary(_ value: Any?, limit: Int = 180) -> String? {
+        normalizedText(value, limit: limit, preserveWhitespace: false)
+    }
+
+    private static func normalizedText(_ value: Any?, limit: Int, preserveWhitespace: Bool) -> String? {
+        guard let string = value as? String else { return nil }
+        let normalized: String
+        if preserveWhitespace {
+            normalized = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            normalized = string
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard !normalized.isEmpty else { return nil }
+        guard normalized.count > limit else { return normalized }
+        let index = normalized.index(normalized.startIndex, offsetBy: limit)
+        return String(normalized[..<index]) + "..."
     }
 
     private static func lock(_ fd: Int32) throws {

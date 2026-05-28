@@ -58,6 +58,44 @@ final class CodexHookRegistrationServiceTests: XCTestCase {
         XCTAssertEqual(occurrences, 1)
     }
 
+    func testRegisterRemovesStaleFloatMonHooksForSameEvent() throws {
+        let hooksURL = root.appendingPathComponent("hooks.json")
+        try """
+        {
+          "hooks": {
+            "Stop": [
+              {
+                "hooks": [
+                  {
+                    "command": "'/tmp/old/FloatMon' --floatmon-codex-hook Stop",
+                    "type": "command",
+                    "timeout": 5
+                  }
+                ]
+              },
+              {
+                "hooks": [
+                  {
+                    "command": "echo existing",
+                    "type": "command",
+                    "timeout": 5
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """.write(to: hooksURL, atomically: true, encoding: .utf8)
+        let service = CodexHookRegistrationService(paths: CodexPaths(codexHome: root))
+
+        _ = try service.register(executablePath: "/tmp/current/FloatMon")
+
+        let output = try String(contentsOf: hooksURL, encoding: .utf8)
+        XCTAssertFalse(output.contains("'/tmp/old/FloatMon' --floatmon-codex-hook Stop"))
+        XCTAssertTrue(output.contains("echo existing"))
+        XCTAssertEqual(output.components(separatedBy: "--floatmon-codex-hook Stop").count - 1, 1)
+    }
+
     func testIsRegisteredMatchesEscapedExecutablePath() throws {
         let hooksURL = root.appendingPathComponent("hooks.json")
         try #"{"hooks":{}}"#.write(to: hooksURL, atomically: true, encoding: .utf8)

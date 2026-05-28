@@ -5,13 +5,14 @@ import Observation
 @MainActor
 final class AgentStore {
     var snapshot = AgentSnapshot.empty
-    var shouldPromptForCodexHook = false
 
     private let paths: CodexPaths
     private let reader: CodexSnapshotReader
     private let registrationService: CodexHookRegistrationService
     private let executablePath: String
     private var hookStatus: AgentHookStatus = .unknown
+    private var isRefreshing = false
+    private var refreshTask: Task<Void, Never>?
     private var timer: Timer?
 
     init(
@@ -23,7 +24,6 @@ final class AgentStore {
         self.reader = CodexSnapshotReader(paths: paths)
         self.registrationService = CodexHookRegistrationService(paths: paths)
         self.executablePath = executablePath
-        refreshHookStatus()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -35,25 +35,42 @@ final class AgentStore {
     func stop() {
         timer?.invalidate()
         timer = nil
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
-    func refresh() {
-        snapshot = reader.readSnapshot(hookStatus: hookStatus)
+    func refresh(force: Bool = false) {
+        if isRefreshing {
+            guard force else { return }
+            refreshTask?.cancel()
+            isRefreshing = false
+        }
+        isRefreshing = true
+
+        let reader = reader
+        let hookStatus = hookStatus
+        refreshTask = Task { [weak self] in
+            let snapshot = await Task.detached(priority: .utility) {
+                reader.readSnapshot(hookStatus: hookStatus)
+            }.value
+
+            guard let self, !Task.isCancelled else { return }
+            self.snapshot = snapshot
+            self.isRefreshing = false
+        }
     }
 
     func refreshHookStatus() {
         if registrationService.isRegistered(executablePath: executablePath) {
             hookStatus = .registered
-            shouldPromptForCodexHook = false
         } else {
             hookStatus = .missing
-            shouldPromptForCodexHook = true
         }
+        refresh(force: true)
     }
 
     func declineHookRegistration() {
         hookStatus = .declined
-        shouldPromptForCodexHook = false
         refresh()
     }
 
@@ -61,10 +78,8 @@ final class AgentStore {
         do {
             _ = try registrationService.register(executablePath: executablePath)
             hookStatus = .registered
-            shouldPromptForCodexHook = false
         } catch {
             hookStatus = .failed(error.localizedDescription)
-            shouldPromptForCodexHook = false
         }
         refresh()
     }

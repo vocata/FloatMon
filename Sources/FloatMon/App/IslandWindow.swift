@@ -5,7 +5,7 @@ import SwiftUI
 final class IslandWindow: NSPanel {
     private enum Metrics {
         static let collapsedSize = NSSize(width: 68, height: 68)
-        static let expandedSize = NSSize(width: 520, height: 390)
+        static let expandedSize = NSSize(width: 520, height: 460)
         static let animationDuration: TimeInterval = 0.26
     }
 

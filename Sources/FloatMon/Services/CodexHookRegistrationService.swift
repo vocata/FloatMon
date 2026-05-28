@@ -99,6 +99,26 @@ struct CodexHookRegistrationService {
     private func mergeHook(event: String, executablePath: String, into hooks: inout [String: Any]) {
         let command = Self.command(executablePath: executablePath, event: event)
         var entries = hooks[event] as? [[String: Any]] ?? []
+        entries = entries.compactMap { entry in
+            guard let hookList = entry["hooks"] as? [[String: Any]] else {
+                return entry
+            }
+
+            let retainedHooks = hookList.filter { hook in
+                guard let existingCommand = hook["command"] as? String else {
+                    return true
+                }
+                return existingCommand == command || !Self.isFloatMonHookCommand(existingCommand, event: event)
+            }
+
+            guard !retainedHooks.isEmpty else {
+                return nil
+            }
+
+            var retainedEntry = entry
+            retainedEntry["hooks"] = retainedHooks
+            return retainedEntry
+        }
         let alreadyRegistered = entries.contains { entry in
             guard let hookList = entry["hooks"] as? [[String: Any]] else { return false }
             return hookList.contains { ($0["command"] as? String) == command }
@@ -124,5 +144,10 @@ struct CodexHookRegistrationService {
     static func command(executablePath: String, event: String) -> String {
         let escapedPath = executablePath.replacingOccurrences(of: "'", with: "'\\''")
         return "'\(escapedPath)' --floatmon-codex-hook \(event)"
+    }
+
+    private static func isFloatMonHookCommand(_ command: String, event: String) -> Bool {
+        command.contains("/FloatMon")
+            && command.hasSuffix("--floatmon-codex-hook \(event)")
     }
 }

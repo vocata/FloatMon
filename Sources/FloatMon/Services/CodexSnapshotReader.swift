@@ -24,15 +24,14 @@ struct CodexSnapshotReader {
     }
 
     func readSnapshot(hookStatus: AgentHookStatus) -> AgentSnapshot {
-        let events = readRecentEvents(limit: 8)
+        let events = readRecentEvents(limit: 20)
         let thread = readCurrentThread()
         let goal = thread.flatMap { readGoal(threadID: $0.id) }
-        let status = events.first?.status ?? .idle
         let sqliteAvailable = FileManager.default.fileExists(atPath: paths.stateSQLite.path)
 
         return AgentSnapshot(
             provider: .codex,
-            activityStatus: status,
+            latestEventType: events.first?.type,
             hookStatus: hookStatus,
             currentThread: thread,
             currentGoal: goal,
@@ -43,18 +42,47 @@ struct CodexSnapshotReader {
     }
 
     func readRecentEvents(limit: Int) -> [AgentEvent] {
-        guard
-            let content = try? String(contentsOf: paths.eventsJSONL, encoding: .utf8)
-        else {
+        let events = eventLogURLs()
+            .flatMap { url -> [AgentEvent] in
+                guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+                    return []
+                }
+                return content
+                    .split(separator: "\n")
+                    .compactMap { AgentEvent.decodeLossyJSONLine(String($0)) }
+            }
+            .sorted { $0.timestamp > $1.timestamp }
+
+        var recentEvents: [AgentEvent] = []
+        for event in events {
+            guard recentEvents.count < limit else { break }
+            if recentEvents.last.map({ Self.isDuplicate(event, of: $0) }) == true {
+                continue
+            }
+            recentEvents.append(event)
+        }
+        return recentEvents
+    }
+
+    private func eventLogURLs() -> [URL] {
+        guard let eventFiles = try? FileManager.default.contentsOfDirectory(
+            at: paths.providerDirectory(provider: .codex),
+            includingPropertiesForKeys: nil
+        ) else {
             return []
         }
 
-        return content
-            .split(separator: "\n")
-            .compactMap { AgentEvent.decodeLossyJSONLine(String($0)) }
-            .sorted { $0.timestamp > $1.timestamp }
-            .prefix(limit)
-            .map { $0 }
+        return eventFiles.filter { $0.pathExtension == "jsonl" }
+    }
+
+    private static func isDuplicate(_ event: AgentEvent, of previousEvent: AgentEvent) -> Bool {
+        event.provider == previousEvent.provider
+            && event.type == previousEvent.type
+            && event.threadID == previousEvent.threadID
+            && event.toolName == previousEvent.toolName
+            && event.detail == previousEvent.detail
+            && event.message == previousEvent.message
+            && abs(event.timestamp.timeIntervalSince(previousEvent.timestamp)) <= 2
     }
 
     private func readCurrentThread() -> AgentThreadSummary? {
