@@ -407,7 +407,7 @@ private final class AgentEventDetailPanel {
             }
 
             close()
-            return event
+            return nil
         }
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
