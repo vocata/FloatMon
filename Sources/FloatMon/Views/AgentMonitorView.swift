@@ -7,9 +7,11 @@ struct AgentMonitorView: View {
         static let recentEventsHeight: CGFloat = 150
         static let detailPopoverWidth: CGFloat = 380
         static let detailPopoverHeight: CGFloat = 150
-        static let detailPopoverTrailingPadding: CGFloat = 18
-        static let detailPopoverBottomPadding: CGFloat = 10
-        static let detailPopoverBoundaryMargin: CGFloat = 8
+        static let detailPopoverMargin: CGFloat = 8
+        static let detailPopoverSize = CGSize(
+            width: detailPopoverWidth,
+            height: detailPopoverHeight
+        )
     }
 
     let snapshot: AgentSnapshot
@@ -18,68 +20,32 @@ struct AgentMonitorView: View {
 
     @State private var isConfirmingHookRegistration = false
     @State private var selectedEvent: AgentEvent?
-    @State private var detailPopoverOffset = CGSize.zero
-    @State private var detailPopoverDragStart = CGSize.zero
 
     private var recentEvents: [AgentEvent] {
         Array(snapshot.recentEvents.filter(\.isRich).prefix(Metrics.recentEventLimit))
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .bottomTrailing) {
-                VStack(alignment: .leading, spacing: 8) {
-                    header
+        VStack(alignment: .leading, spacing: 8) {
+            header
 
-                    if snapshot.hookStatus == .registered {
-                        registeredContent
-                    } else {
-                        registrationContent
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
-
-                if selectedEvent != nil {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            closeDetails()
-                        }
-                        .zIndex(40)
-                }
-
-                if let selectedEvent {
-                    EventDetailPopover(
-                        event: selectedEvent,
-                        onDragChanged: { value in
-                            updateDetailPopoverDrag(value, in: geometry.size)
-                        },
-                        onDragEnded: {
-                            detailPopoverDragStart = detailPopoverOffset
-                        }
-                    )
-                        .frame(width: Metrics.detailPopoverWidth, height: Metrics.detailPopoverHeight)
-                        .padding(.trailing, Metrics.detailPopoverTrailingPadding)
-                        .padding(.bottom, Metrics.detailPopoverBottomPadding)
-                        .offset(detailPopoverOffset)
-                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .onTapGesture {}
-                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottomTrailing)))
-                        .zIndex(50)
-                }
+            if snapshot.hookStatus == .registered {
+                registeredContent
+            } else {
+                registrationContent
             }
-            .animation(.easeOut(duration: 0.14), value: selectedEvent?.id)
-            .onChange(of: snapshot.hookStatus) { _, status in
-                if status == .registered {
-                    isConfirmingHookRegistration = false
-                }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .animation(.easeOut(duration: 0.14), value: selectedEvent?.id)
+        .onChange(of: snapshot.hookStatus) { _, status in
+            if status == .registered {
+                isConfirmingHookRegistration = false
             }
-            .onChange(of: recentEvents.map(\.id)) { _, eventIDs in
-                guard let selectedEvent, !eventIDs.contains(selectedEvent.id) else { return }
-                closeDetails()
-            }
+        }
+        .onDisappear {
+            closeDetails()
         }
     }
 
@@ -312,41 +278,153 @@ struct AgentMonitorView: View {
         if selectedEvent?.id == event.id {
             closeDetails()
         } else {
-            resetDetailPopoverPosition()
             selectedEvent = event
+            AgentEventDetailPanel.shared.show(
+                event: event,
+                anchor: NSEvent.mouseLocation,
+                containerFrame: currentScreenFrame,
+                size: Metrics.detailPopoverSize,
+                margin: Metrics.detailPopoverMargin,
+                onClose: {
+                    selectedEvent = nil
+                }
+            )
         }
     }
 
     private func closeDetails() {
+        AgentEventDetailPanel.shared.close(notify: false)
         selectedEvent = nil
-        resetDetailPopoverPosition()
     }
 
-    private func resetDetailPopoverPosition() {
-        detailPopoverOffset = .zero
-        detailPopoverDragStart = .zero
+    private var currentScreenFrame: CGRect {
+        NSApp.windows
+            .first { $0 is IslandWindow && $0.isVisible }?
+            .frame ?? .zero
     }
+}
 
-    private func updateDetailPopoverDrag(_ value: DragGesture.Value, in size: CGSize) {
-        let proposed = CGSize(
-            width: detailPopoverDragStart.width + value.translation.width,
-            height: detailPopoverDragStart.height + value.translation.height
+@MainActor
+private final class AgentEventDetailPanel {
+    static let shared = AgentEventDetailPanel()
+
+    private var panel: NSPanel?
+    private var hostingView: NSHostingView<EventDetailPopover>?
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
+    private var onClose: (() -> Void)?
+
+    func show(
+        event: AgentEvent,
+        anchor: CGPoint,
+        containerFrame: CGRect,
+        size: CGSize,
+        margin: CGFloat,
+        onClose: @escaping () -> Void
+    ) {
+        guard !containerFrame.isEmpty else { return }
+
+        self.onClose = onClose
+        let frame = panelFrame(
+            anchor: anchor,
+            containerFrame: containerFrame,
+            size: size,
+            margin: margin
         )
-        detailPopoverOffset = clampedDetailPopoverOffset(proposed, in: size)
+        let content = EventDetailPopover(event: event)
+        let hostingView = hostingView ?? NSHostingView(rootView: content)
+        hostingView.rootView = content
+        hostingView.frame = NSRect(origin: .zero, size: size)
+        self.hostingView = hostingView
+
+        let panel = panel ?? makePanel(contentView: hostingView, size: size)
+        panel.contentView = hostingView
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+        self.panel = panel
+
+        DispatchQueue.main.async { [weak self] in
+            self?.installEventMonitors()
+        }
     }
 
-    private func clampedDetailPopoverOffset(_ offset: CGSize, in size: CGSize) -> CGSize {
-        let baseX = size.width - Metrics.detailPopoverWidth - Metrics.detailPopoverTrailingPadding
-        let baseY = size.height - Metrics.detailPopoverHeight - Metrics.detailPopoverBottomPadding
-        let minX = Metrics.detailPopoverBoundaryMargin - baseX
-        let maxX = size.width - Metrics.detailPopoverBoundaryMargin - Metrics.detailPopoverWidth - baseX
-        let minY = Metrics.detailPopoverBoundaryMargin - baseY
-        let maxY = size.height - Metrics.detailPopoverBoundaryMargin - Metrics.detailPopoverHeight - baseY
+    func close(notify: Bool = true) {
+        panel?.orderOut(nil)
+        removeEventMonitors()
 
-        return CGSize(
-            width: min(max(offset.width, min(minX, maxX)), max(minX, maxX)),
-            height: min(max(offset.height, min(minY, maxY)), max(minY, maxY))
+        let callback = onClose
+        onClose = nil
+        if notify {
+            callback?()
+        }
+    }
+
+    private func panelFrame(anchor: CGPoint, containerFrame: CGRect, size: CGSize, margin: CGFloat) -> CGRect {
+        let localAnchor = CGPoint(
+            x: anchor.x - containerFrame.minX,
+            y: containerFrame.maxY - anchor.y
         )
+        let localFrame = EventDetailPopoverPlacement.frame(
+            for: localAnchor,
+            in: containerFrame.size,
+            popoverSize: size,
+            margin: margin
+        )
+
+        return CGRect(
+            x: containerFrame.minX + localFrame.minX,
+            y: containerFrame.maxY - localFrame.maxY,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    private func makePanel(contentView: NSView, size: CGSize) -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = false
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.hidesOnDeactivate = false
+        panel.contentView = contentView
+        return panel
+    }
+
+    private func installEventMonitors() {
+        removeEventMonitors()
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            guard let panel else { return event }
+
+            if event.window === panel {
+                return event
+            }
+
+            close()
+            return event
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                self?.close()
+            }
+        }
+    }
+
+    private func removeEventMonitors() {
+        if let localMonitor {
+            NSEvent.removeMonitor(localMonitor)
+            self.localMonitor = nil
+        }
+        if let globalMonitor {
+            NSEvent.removeMonitor(globalMonitor)
+            self.globalMonitor = nil
+        }
     }
 }
 
@@ -466,8 +544,6 @@ private struct EventRow: View {
 
 private struct EventDetailPopover: View {
     let event: AgentEvent
-    let onDragChanged: (DragGesture.Value) -> Void
-    let onDragEnded: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -490,11 +566,6 @@ private struct EventDetailPopover: View {
                         .monospacedDigit()
                 }
                 .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 2)
-                        .onChanged(onDragChanged)
-                        .onEnded { _ in onDragEnded() }
-                )
 
                 Button {
                     NSPasteboard.general.clearContents()
