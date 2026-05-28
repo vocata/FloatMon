@@ -6,8 +6,6 @@ enum ExternalHoverTooltipTone {
     case green
     case cyan
     case orange
-    case pink
-    case purple
     case red
     case blue
 
@@ -21,10 +19,6 @@ enum ExternalHoverTooltipTone {
             return Color(red: 0.00, green: 0.78, blue: 1.00)
         case .orange:
             return Color(red: 1.00, green: 0.58, blue: 0.08)
-        case .pink:
-            return Color(red: 1.00, green: 0.20, blue: 0.58)
-        case .purple:
-            return Color(red: 0.68, green: 0.38, blue: 1.00)
         case .red:
             return Color(red: 1.00, green: 0.18, blue: 0.18)
         case .blue:

@@ -86,6 +86,20 @@ final class CodexSnapshotReaderTests: XCTestCase {
         XCTAssertEqual(events.map(\.threadID), ["thread-2", "thread-1"])
     }
 
+    func testRecentEventsReadTailOfLargeThreadFiles() throws {
+        let newerButOldLine = #"{"provider":"codex","type":"SessionStart","timestamp":1779868700.25,"threadID":"thread-1"}"#
+        let spacer = String(repeating: "not-json\n", count: 55_000)
+        let recentLine = #"{"provider":"codex","type":"Stop","timestamp":1779868650.25,"threadID":"thread-1","message":"tail"}"#
+        try [newerButOldLine, spacer, recentLine].joined(separator: "\n")
+            .write(to: eventURL(threadID: "thread-1"), atomically: true, encoding: .utf8)
+        let reader = CodexSnapshotReader(paths: testPaths)
+
+        let events = reader.readRecentEvents(limit: 5)
+
+        XCTAssertEqual(events.map(\.type), ["Stop"])
+        XCTAssertEqual(events.first?.message, "tail")
+    }
+
     func testMissingSqliteFilesReturnUnavailableSnapshot() {
         let reader = CodexSnapshotReader(paths: testPaths)
 

@@ -2,6 +2,7 @@ import Foundation
 
 struct CodexSnapshotReader {
     let paths: CodexPaths
+    private static let recentEventReadByteLimit: UInt64 = 384 * 1024
 
     private struct ThreadRow: Decodable {
         let id: String
@@ -43,14 +44,7 @@ struct CodexSnapshotReader {
 
     func readRecentEvents(limit: Int) -> [AgentEvent] {
         let events = eventLogURLs()
-            .flatMap { url -> [AgentEvent] in
-                guard let content = try? String(contentsOf: url, encoding: .utf8) else {
-                    return []
-                }
-                return content
-                    .split(separator: "\n")
-                    .compactMap { AgentEvent.decodeLossyJSONLine(String($0)) }
-            }
+            .flatMap(readEvents)
             .sorted { $0.timestamp > $1.timestamp }
 
         var recentEvents: [AgentEvent] = []
@@ -62,6 +56,32 @@ struct CodexSnapshotReader {
             recentEvents.append(event)
         }
         return recentEvents
+    }
+
+    private func readEvents(from url: URL) -> [AgentEvent] {
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+
+            let fileSize = try handle.seekToEnd()
+            let offset = fileSize > Self.recentEventReadByteLimit
+                ? fileSize - Self.recentEventReadByteLimit
+                : 0
+            try handle.seek(toOffset: offset)
+            guard var data = try handle.readToEnd() else { return [] }
+
+            if offset > 0 {
+                guard let firstNewline = data.firstIndex(of: 0x0A) else { return [] }
+                data.removeSubrange(data.startIndex...firstNewline)
+            }
+
+            guard let content = String(data: data, encoding: .utf8) else { return [] }
+            return content
+                .split(separator: "\n")
+                .compactMap { AgentEvent.decodeLossyJSONLine(String($0)) }
+        } catch {
+            return []
+        }
     }
 
     private func eventLogURLs() -> [URL] {
