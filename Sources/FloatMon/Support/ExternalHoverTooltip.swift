@@ -8,6 +8,8 @@ enum ExternalHoverTooltipTone {
     case orange
     case red
     case blue
+    case purple
+    case teal
 
     var color: Color {
         switch self {
@@ -23,6 +25,10 @@ enum ExternalHoverTooltipTone {
             return Color(red: 1.00, green: 0.18, blue: 0.18)
         case .blue:
             return Color(red: 0.18, green: 0.46, blue: 1.00)
+        case .purple:
+            return Color(red: 0.68, green: 0.43, blue: 1.00)
+        case .teal:
+            return Color(red: 0.00, green: 0.78, blue: 0.82)
         }
     }
 }
