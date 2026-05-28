@@ -32,6 +32,8 @@ struct ExternalHoverTooltipPayload {
     let subtitle: String?
     let detailLines: [String]
     let systemImage: String?
+    let image: NSImage?
+    let agentProvider: AgentProvider?
     let tone: ExternalHoverTooltipTone
 }
 
@@ -77,6 +79,8 @@ extension View {
         subtitle: String? = nil,
         detailLines: [String] = [],
         systemImage: String? = nil,
+        image: NSImage? = nil,
+        agentProvider: AgentProvider? = nil,
         tone: ExternalHoverTooltipTone = .neutral
     ) -> some View {
         modifier(
@@ -86,6 +90,8 @@ extension View {
                     subtitle: subtitle,
                     detailLines: detailLines,
                     systemImage: systemImage,
+                    image: image,
+                    agentProvider: agentProvider,
                     tone: tone
                 )
             )
@@ -348,7 +354,11 @@ private struct TooltipContent: View {
                 .fill(.white.opacity(0.075))
                 .frame(width: 28, height: 28)
 
-            if let systemImage = payload.systemImage {
+            if let agentProvider = payload.agentProvider {
+                AgentIcon(provider: agentProvider, size: 28, fontSize: 10)
+            } else if let image = payload.image {
+                AppIconView(image: image, size: 28)
+            } else if let systemImage = payload.systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.78))

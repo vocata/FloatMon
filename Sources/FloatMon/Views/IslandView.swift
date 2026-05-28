@@ -244,14 +244,15 @@ struct IslandView: View {
             title: featuredApp?.name ?? "No open apps",
             subtitle: collapsedAppSubtitle,
             systemImage: "app.fill",
+            image: featuredApp?.icon,
             tone: featuredPressureTone
         )
     }
 
     private var collapsedAgentHeader: some View {
         ZStack(alignment: .bottomTrailing) {
-            AgentIcon(size: 42, symbolSize: 24)
-                .frame(width: 42, height: 42)
+            AgentIcon(provider: agentStore.snapshot.provider, size: 32, fontSize: 8)
+                .frame(width: 38, height: 38)
 
             statusDot(color: agentStatusColor)
         }
@@ -259,7 +260,7 @@ struct IslandView: View {
             title: agentStore.snapshot.provider.displayName,
             subtitle: agentStore.snapshot.hookStatus.label,
             detailLines: collapsedAgentDetailLines,
-            systemImage: "terminal",
+            agentProvider: agentStore.snapshot.provider,
             tone: agentStatusTone
         )
     }

@@ -51,7 +51,7 @@ struct AgentMonitorView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            AgentIcon(size: 24, symbolSize: 13)
+            AgentIcon(provider: snapshot.provider, size: 24, fontSize: 8)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(snapshot.provider.displayName)
@@ -115,7 +115,7 @@ struct AgentMonitorView: View {
         VStack(spacing: 10) {
             Spacer(minLength: 4)
 
-            AgentIcon(size: 40, symbolSize: 20)
+            AgentIcon(provider: snapshot.provider, size: 40, fontSize: 12)
 
             VStack(spacing: 4) {
                 Text(registrationTitle)
@@ -665,31 +665,47 @@ private struct EventDetailPopover: View {
 }
 
 struct AgentIcon: View {
+    let provider: AgentProvider
     let size: CGFloat
-    let symbolSize: CGFloat
+    let fontSize: CGFloat
+
+    init(provider: AgentProvider = .codex, size: CGFloat, fontSize: CGFloat) {
+        self.provider = provider
+        self.size = size
+        self.fontSize = fontSize
+    }
 
     var body: some View {
-        Image(systemName: "terminal")
-            .font(.system(size: symbolSize, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.82))
+        Text(provider.iconText)
+            .font(.system(size: fontSize, weight: .black, design: .rounded))
+            .foregroundStyle(.white.opacity(0.88))
+            .lineLimit(1)
+            .minimumScaleFactor(0.35)
+            .padding(.horizontal, size * 0.14)
             .frame(width: size, height: size)
             .background {
                 RoundedRectangle(cornerRadius: max(size * 0.22, 6), style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.18, green: 0.48, blue: 0.96).opacity(0.86),
-                                Color(red: 0.07, green: 0.72, blue: 0.62).opacity(0.72)
+                                Color(red: 0.66, green: 0.56, blue: 1.00).opacity(0.94),
+                                Color(red: 0.36, green: 0.50, blue: 1.00).opacity(0.90),
+                                Color(red: 0.20, green: 0.17, blue: 1.00).opacity(0.86)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
             }
-            .overlay {
-                RoundedRectangle(cornerRadius: max(size * 0.22, 6), style: .continuous)
-                    .stroke(.white.opacity(0.14), lineWidth: 1)
-            }
+    }
+}
+
+private extension AgentProvider {
+    var iconText: String {
+        switch self {
+        case .codex:
+            return "Codex"
+        }
     }
 }
 
