@@ -6,11 +6,15 @@ struct CodexHookRegistrationResult: Equatable {
 
 struct CodexHookRegistrationService {
     private static let events = [
+        "PreToolUse",
+        "PermissionRequest",
+        "PostToolUse",
+        "PreCompact",
+        "PostCompact",
         "SessionStart",
         "UserPromptSubmit",
-        "PreToolUse",
-        "PostToolUse",
-        "PermissionRequest",
+        "SubagentStart",
+        "SubagentStop",
         "Stop"
     ]
 

@@ -739,10 +739,18 @@ private extension String {
             return Color(red: 1.00, green: 0.58, blue: 0.08)
         case "PostToolUse":
             return Color(red: 0.00, green: 0.78, blue: 0.82)
+        case "PreCompact":
+            return Color(red: 0.45, green: 0.56, blue: 0.68)
+        case "PostCompact":
+            return Color(red: 0.36, green: 0.84, blue: 0.52)
         case "Stop":
             return Color(red: 0.25, green: 0.92, blue: 0.42)
         case "UserPromptSubmit":
             return Color(red: 0.68, green: 0.43, blue: 1.00)
+        case "SubagentStart":
+            return Color(red: 0.00, green: 0.78, blue: 1.00)
+        case "SubagentStop":
+            return Color(red: 0.56, green: 0.76, blue: 1.00)
         case "SessionStart":
             return Color(red: 0.56, green: 0.58, blue: 0.62)
         default:

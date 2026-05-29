@@ -45,6 +45,30 @@ final class CodexHookRegistrationServiceTests: XCTestCase {
         XCTAssertTrue(output.contains("--floatmon-codex-hook PostToolUse"))
     }
 
+    func testRegisterInstallsAllSupportedCodexHooks() throws {
+        let hooksURL = root.appendingPathComponent("hooks.json")
+        try #"{"hooks":{}}"#.write(to: hooksURL, atomically: true, encoding: .utf8)
+        let service = CodexHookRegistrationService(paths: CodexPaths(codexHome: root))
+
+        _ = try service.register(executablePath: "/tmp/FloatMon")
+
+        let output = try String(contentsOf: hooksURL, encoding: .utf8)
+        [
+            "PreToolUse",
+            "PermissionRequest",
+            "PostToolUse",
+            "PreCompact",
+            "PostCompact",
+            "SessionStart",
+            "UserPromptSubmit",
+            "SubagentStart",
+            "SubagentStop",
+            "Stop"
+        ].forEach { event in
+            XCTAssertTrue(output.contains("--floatmon-codex-hook \(event)"), "Missing \(event)")
+        }
+    }
+
     func testRegisterIsIdempotent() throws {
         let hooksURL = root.appendingPathComponent("hooks.json")
         try #"{"hooks":{}}"#.write(to: hooksURL, atomically: true, encoding: .utf8)

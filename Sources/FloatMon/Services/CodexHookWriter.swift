@@ -105,7 +105,11 @@ struct CodexHookWriter {
         let prompt: String?
         let toolInputDetail: String?
         let toolResponseDetail: String?
+        let compactDetail: String?
+        let subagentName: String?
+        let subagentTask: String?
         let message: String?
+        let payloadDetail: String?
 
         func detail(for eventType: String) -> String? {
             switch eventType {
@@ -117,10 +121,27 @@ struct CodexHookWriter {
                 return toolInputDetail
             case "PostToolUse":
                 return postToolUseDetail
+            case "PreCompact", "PostCompact":
+                return compactDetail ?? payloadDetail
+            case "SubagentStart", "SubagentStop":
+                return subagentDetail ?? payloadDetail
             case "Stop":
                 return message == nil ? nil : "Assistant response"
             default:
-                return toolInputDetail ?? prompt ?? source
+                return toolInputDetail ?? prompt ?? source ?? payloadDetail
+            }
+        }
+
+        private var subagentDetail: String? {
+            switch (subagentName, subagentTask) {
+            case let (name?, task?):
+                return "\(name): \(task)"
+            case let (name?, nil):
+                return name
+            case let (nil, task?):
+                return task
+            case (nil, nil):
+                return nil
             }
         }
 
@@ -149,7 +170,11 @@ struct CodexHookWriter {
                 prompt: nil,
                 toolInputDetail: nil,
                 toolResponseDetail: nil,
-                message: nil
+                compactDetail: nil,
+                subagentName: nil,
+                subagentTask: nil,
+                message: nil,
+                payloadDetail: nil
             )
         }
 
@@ -168,6 +193,24 @@ struct CodexHookWriter {
         let prompt = normalizedText(object["prompt"], limit: 2_000, preserveWhitespace: false)
         let toolInputDetail = summary(from: object["tool_input"] ?? object["toolInput"], limit: 12_000, preserveWhitespace: true)
         let toolResponseDetail = summary(from: object["tool_response"] ?? object["toolResponse"], limit: 12_000, preserveWhitespace: true)
+        let compactDetail = firstSummary(
+            in: object,
+            keys: ["compact_summary", "compactSummary", "summary", "reason", "trigger"],
+            limit: 4_000,
+            preserveWhitespace: false
+        )
+        let subagentName = firstSummary(
+            in: object,
+            keys: ["subagent_name", "subagentName", "agent_name", "agentName", "name", "subagent_type", "subagentType"],
+            limit: 200,
+            preserveWhitespace: false
+        )
+        let subagentTask = firstSummary(
+            in: object,
+            keys: ["task", "description", "prompt", "message"],
+            limit: 4_000,
+            preserveWhitespace: false
+        )
         let message = normalizedSummary(
             object["last_assistant_message"]
                 ?? object["lastAssistantMessage"]
@@ -175,6 +218,7 @@ struct CodexHookWriter {
                 ?? object["content"],
             limit: 2_000
         )
+        let payloadDetail = jsonSummary(from: object, limit: 12_000)
         return Metadata(
             threadID: threadID,
             toolName: toolName,
@@ -182,8 +226,26 @@ struct CodexHookWriter {
             prompt: prompt,
             toolInputDetail: toolInputDetail,
             toolResponseDetail: toolResponseDetail,
-            message: message
+            compactDetail: compactDetail,
+            subagentName: subagentName,
+            subagentTask: subagentTask,
+            message: message,
+            payloadDetail: payloadDetail
         )
+    }
+
+    private static func firstSummary(
+        in object: [String: Any],
+        keys: [String],
+        limit: Int,
+        preserveWhitespace: Bool
+    ) -> String? {
+        for key in keys {
+            if let summary = summary(from: object[key], limit: limit, preserveWhitespace: preserveWhitespace) {
+                return summary
+            }
+        }
+        return nil
     }
 
     private static func summary(from value: Any?, limit: Int = 180, preserveWhitespace: Bool = false) -> String? {
@@ -207,6 +269,15 @@ struct CodexHookWriter {
             return nil
         }
         return normalizedText(string, limit: limit, preserveWhitespace: preserveWhitespace)
+    }
+
+    private static func jsonSummary(from object: [String: Any], limit: Int) -> String? {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              let string = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return normalizedText(string, limit: limit, preserveWhitespace: true)
     }
 
     private static func normalizedSummary(_ value: Any?, limit: Int = 180) -> String? {

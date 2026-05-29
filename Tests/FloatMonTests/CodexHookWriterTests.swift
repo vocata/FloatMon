@@ -74,6 +74,36 @@ final class CodexHookWriterTests: XCTestCase {
         XCTAssertFalse(detail.contains("..."))
     }
 
+    func testWritesCompactHookDetails() throws {
+        let writer = CodexHookWriter(paths: testPaths)
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "thread_id": "thread-1",
+            "compact_summary": "Reducing context before continuing the task",
+            "reason": "manual"
+        ])
+
+        try writer.write(eventType: "PreCompact", stdinData: payload)
+
+        let events = try eventLines(threadID: "thread-1").map(AgentEvent.decodeJSONLine)
+        XCTAssertEqual(events[0].type, "PreCompact")
+        XCTAssertEqual(events[0].detail, "Reducing context before continuing the task")
+    }
+
+    func testWritesSubagentHookDetails() throws {
+        let writer = CodexHookWriter(paths: testPaths)
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "thread_id": "thread-1",
+            "subagent_name": "reviewer",
+            "task": "Review the agent monitor changes"
+        ])
+
+        try writer.write(eventType: "SubagentStart", stdinData: payload)
+
+        let events = try eventLines(threadID: "thread-1").map(AgentEvent.decodeJSONLine)
+        XCTAssertEqual(events[0].type, "SubagentStart")
+        XCTAssertEqual(events[0].detail, "reviewer: Review the agent monitor changes")
+    }
+
     func testAppendsDecodableEventsInOrder() throws {
         let writer = CodexHookWriter(paths: testPaths)
         let firstPayload = #"{"thread_id":"thread-1","tool_name":"exec_command"}"#.data(using: .utf8)!
