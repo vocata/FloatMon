@@ -766,6 +766,8 @@ private struct EventRow: View {
 
 private struct EventDetailPopover: View {
     let event: AgentEvent
+    @State private var copiedDetail = false
+    @State private var copiedThreadID = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -792,19 +794,20 @@ private struct EventDetailPopover: View {
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(detailText, forType: .string)
+                    showCopiedDetail()
                 } label: {
-                    Image(systemName: "doc.on.doc")
+                    Image(systemName: copiedDetail ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.66))
+                        .foregroundStyle(copiedDetail ? Color(red: 0.25, green: 0.92, blue: 0.42) : .white.opacity(0.66))
                         .frame(width: 22, height: 22)
                         .background {
                             Circle()
-                                .fill(.white.opacity(0.07))
+                                .fill(copiedDetail ? Color(red: 0.25, green: 0.92, blue: 0.42).opacity(0.14) : .white.opacity(0.07))
                         }
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .hoverTooltip("Copy content")
+                .hoverTooltip(copiedDetail ? "Copied" : "Copy content")
             }
 
             if let threadID = event.threadID, !threadID.isEmpty {
@@ -825,19 +828,20 @@ private struct EventDetailPopover: View {
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(threadID, forType: .string)
+                        showCopiedThreadID()
                     } label: {
-                        Image(systemName: "doc.on.doc")
+                        Image(systemName: copiedThreadID ? "checkmark" : "doc.on.doc")
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.52))
+                            .foregroundStyle(copiedThreadID ? Color(red: 0.25, green: 0.92, blue: 0.42) : .white.opacity(0.52))
                             .frame(width: 18, height: 18)
                             .background {
                                 Circle()
-                                    .fill(.white.opacity(0.055))
+                                    .fill(copiedThreadID ? Color(red: 0.25, green: 0.92, blue: 0.42).opacity(0.12) : .white.opacity(0.055))
                             }
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .hoverTooltip("Copy thread ID")
+                    .hoverTooltip(copiedThreadID ? "Copied" : "Copy thread ID")
                 }
                 .padding(.horizontal, 8)
                 .frame(height: 24)
@@ -877,6 +881,30 @@ private struct EventDetailPopover: View {
             return detail
         }
         return ""
+    }
+
+    private func showCopiedDetail() {
+        withAnimation(.easeInOut(duration: 0.12)) {
+            copiedDetail = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1_200))
+            withAnimation(.easeInOut(duration: 0.16)) {
+                copiedDetail = false
+            }
+        }
+    }
+
+    private func showCopiedThreadID() {
+        withAnimation(.easeInOut(duration: 0.12)) {
+            copiedThreadID = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1_200))
+            withAnimation(.easeInOut(duration: 0.16)) {
+                copiedThreadID = false
+            }
+        }
     }
 
     private static let timeFormatter: DateFormatter = {
