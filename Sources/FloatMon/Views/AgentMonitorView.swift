@@ -676,27 +676,33 @@ struct AgentIcon: View {
     }
 
     var body: some View {
-        Text(provider.iconText)
-            .font(.system(size: fontSize, weight: .black, design: .rounded))
-            .foregroundStyle(.white.opacity(0.88))
-            .lineLimit(1)
-            .minimumScaleFactor(0.35)
-            .padding(.horizontal, size * 0.14)
-            .frame(width: size, height: size)
-            .background {
-                RoundedRectangle(cornerRadius: max(size * 0.22, 6), style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.66, green: 0.56, blue: 1.00).opacity(0.94),
-                                Color(red: 0.36, green: 0.50, blue: 1.00).opacity(0.90),
-                                Color(red: 0.20, green: 0.17, blue: 1.00).opacity(0.86)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+        Group {
+            if let image = AgentIconResolver.icon(for: provider) {
+                AppIconView(image: image, size: size)
+            } else {
+                Text(provider.iconText)
+                    .font(.system(size: fontSize, weight: .black, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.35)
+                    .padding(.horizontal, size * 0.14)
+                    .frame(width: size, height: size)
+                    .background {
+                        RoundedRectangle(cornerRadius: max(size * 0.22, 6), style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.66, green: 0.56, blue: 1.00).opacity(0.94),
+                                        Color(red: 0.36, green: 0.50, blue: 1.00).opacity(0.90),
+                                        Color(red: 0.20, green: 0.17, blue: 1.00).opacity(0.86)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    }
             }
+        }
     }
 }
 

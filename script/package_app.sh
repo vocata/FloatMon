@@ -11,6 +11,7 @@ DIST_DIR="$ROOT_DIR/dist.noindex"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 EXECUTABLE="$ROOT_DIR/.build/debug/$APP_NAME"
 LOGO_FILE="$ROOT_DIR/Resources/logo.png"
+AGENT_ICONS_DIR="$ROOT_DIR/Resources/AgentIcons"
 GENERATED_TIFF_DIR="$ROOT_DIR/.build/AppIcon.tiffset"
 GENERATED_TIFF_FILE="$ROOT_DIR/.build/AppIcon.tiff"
 GENERATED_ICON_FILE="$ROOT_DIR/.build/AppIcon.icns"
@@ -53,6 +54,9 @@ create_bundle_layout() {
   cp "$EXECUTABLE" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
   create_icon_from_logo
   cp "$GENERATED_ICON_FILE" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+  if [[ -d "$AGENT_ICONS_DIR" ]]; then
+    cp -R "$AGENT_ICONS_DIR" "$APP_BUNDLE/Contents/Resources/AgentIcons"
+  fi
 }
 
 create_icon_from_logo() {

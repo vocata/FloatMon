@@ -251,8 +251,7 @@ struct IslandView: View {
 
     private var collapsedAgentHeader: some View {
         ZStack(alignment: .bottomTrailing) {
-            AgentIcon(provider: agentStore.snapshot.provider, size: 32, fontSize: 8)
-                .frame(width: 38, height: 38)
+            AgentIcon(provider: agentStore.snapshot.provider, size: 38, fontSize: 8)
 
             statusDot(color: agentStatusColor)
         }
