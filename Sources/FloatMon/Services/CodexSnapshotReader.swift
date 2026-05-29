@@ -3,6 +3,7 @@ import Foundation
 struct CodexSnapshotReader {
     let paths: CodexPaths
     private static let recentEventReadByteLimit: UInt64 = 384 * 1024
+    private static let usageBucketCount = 7
 
     private struct ThreadRow: Decodable {
         let id: String
@@ -20,14 +21,19 @@ struct CodexSnapshotReader {
         let timeUsedSeconds: Int
     }
 
-    init(paths: CodexPaths = CodexPaths()) {
+    private let usageRecorder: CodexUsageRecorder
+
+    init(paths: CodexPaths = CodexPaths(), now: @escaping () -> Date = Date.init) {
         self.paths = paths
+        self.usageRecorder = CodexUsageRecorder(paths: paths, now: now)
     }
 
     func readSnapshot(hookStatus: AgentHookStatus) -> AgentSnapshot {
+        try? usageRecorder.recordCurrentThreads()
         let events = readRecentEvents(limit: 20)
         let thread = readCurrentThread()
         let goal = thread.flatMap { readGoal(threadID: $0.id) }
+        let usageSummary = usageRecorder.readSummary(dayCount: Self.usageBucketCount)
         let sqliteAvailable = FileManager.default.fileExists(atPath: paths.stateSQLite.path)
 
         return AgentSnapshot(
@@ -36,6 +42,7 @@ struct CodexSnapshotReader {
             hookStatus: hookStatus,
             currentThread: thread,
             currentGoal: goal,
+            usageSummary: usageSummary,
             recentEvents: events,
             lastUpdated: Date(),
             unavailableReason: sqliteAvailable ? nil : "Codex sqlite state is unavailable"

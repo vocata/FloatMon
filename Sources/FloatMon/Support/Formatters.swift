@@ -18,4 +18,15 @@ enum AppFormatters {
     static func integer(_ value: Int) -> String {
         integerFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
+
+    static func compactInteger(_ value: Int) -> String {
+        switch value {
+        case 1_000_000...:
+            return String(format: "%.1fM", Double(value) / 1_000_000)
+        case 1_000...:
+            return String(format: "%.1fK", Double(value) / 1_000)
+        default:
+            return integer(value)
+        }
+    }
 }

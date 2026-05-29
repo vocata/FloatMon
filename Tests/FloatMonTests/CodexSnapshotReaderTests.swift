@@ -162,6 +162,49 @@ final class CodexSnapshotReaderTests: XCTestCase {
         XCTAssertEqual(snapshot.currentGoal?.tokenBudget, 500)
     }
 
+    func testSnapshotIncludesRecordedUsageDeltas() throws {
+        let paths = testPaths
+        let calendar = Calendar(identifier: .gregorian)
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 5, day: 29, hour: 12)))
+        try runSQLite(
+            path: paths.stateSQLite.path,
+            query: """
+            create table threads (
+              id text,
+              title text,
+              cwd text,
+              tokens_used integer,
+              updated_at_ms integer
+            );
+            insert into threads values ('thread-1', 'One', '/tmp/a', 100, \(milliseconds(for: now)));
+            insert into threads values ('thread-2', 'Two', '/tmp/b', 50, \(milliseconds(for: now)));
+            """
+        )
+        let reader = CodexSnapshotReader(paths: paths, now: { now })
+
+        var summary = try XCTUnwrap(reader.readSnapshot(hookStatus: .registered).usageSummary)
+        XCTAssertEqual(summary.totalTokens, 0)
+        XCTAssertEqual(summary.threadCount, 2)
+
+        try runSQLite(
+            path: paths.stateSQLite.path,
+            query: """
+            update threads set tokens_used = 175 where id = 'thread-1';
+            update threads set tokens_used = 40 where id = 'thread-2';
+            insert into threads values ('thread-3', 'Three', '/tmp/c', 200, \(milliseconds(for: now)));
+            """
+        )
+
+        summary = try XCTUnwrap(reader.readSnapshot(hookStatus: .registered).usageSummary)
+
+        XCTAssertEqual(summary.totalTokens, 75)
+        XCTAssertEqual(summary.threadCount, 3)
+        XCTAssertEqual(summary.peakTokens, 75)
+        XCTAssertEqual(summary.buckets.count, 7)
+        XCTAssertEqual(summary.buckets.map(\.tokensUsed), [0, 0, 0, 0, 0, 0, 75])
+        XCTAssertEqual(summary.buckets.map(\.threadCount), [0, 0, 0, 0, 0, 0, 1])
+    }
+
     private func runSQLite(path: String, query: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
@@ -170,6 +213,10 @@ final class CodexSnapshotReaderTests: XCTestCase {
         try process.run()
         process.waitUntilExit()
         XCTAssertEqual(process.terminationStatus, 0)
+    }
+
+    private func milliseconds(for date: Date) -> Int {
+        Int(date.timeIntervalSince1970 * 1000)
     }
 
     private var agentsHome: URL {

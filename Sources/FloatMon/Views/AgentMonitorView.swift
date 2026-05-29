@@ -20,6 +20,7 @@ struct AgentMonitorView: View {
 
     @State private var isConfirmingHookRegistration = false
     @State private var selectedEvent: AgentEvent?
+    @State private var isShowingUsageStats = false
 
     private var recentEvents: [AgentEvent] {
         Array(snapshot.recentEvents.filter(\.isRich).prefix(Metrics.recentEventLimit))
@@ -42,6 +43,8 @@ struct AgentMonitorView: View {
         .onChange(of: snapshot.hookStatus) { _, status in
             if status == .registered {
                 isConfirmingHookRegistration = false
+            } else {
+                isShowingUsageStats = false
             }
         }
         .onDisappear {
@@ -66,6 +69,27 @@ struct AgentMonitorView: View {
 
             Spacer(minLength: 8)
 
+            if snapshot.hookStatus == .registered {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isShowingUsageStats.toggle()
+                    }
+                    closeDetails()
+                } label: {
+                    Image(systemName: "chart.bar.xaxis")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(isShowingUsageStats ? 0.90 : 0.72))
+                        .frame(width: 24, height: 24)
+                        .background {
+                            Circle()
+                                .fill(.white.opacity(isShowingUsageStats ? 0.16 : 0.08))
+                        }
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip(isShowingUsageStats ? "Activity" : "Usage")
+            }
+
             Button(action: refresh) {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 12, weight: .semibold))
@@ -83,6 +107,19 @@ struct AgentMonitorView: View {
     }
 
     private var registeredContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isShowingUsageStats {
+                UsageStatsView(summary: snapshot.usageSummary)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else {
+                activityContent
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: isShowingUsageStats)
+    }
+
+    private var activityContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(spacing: 4) {
                 InfoRow(
@@ -302,6 +339,191 @@ struct AgentMonitorView: View {
             .first { $0 is IslandWindow && $0.isVisible }?
             .frame ?? .zero
     }
+}
+
+private struct UsageStatsView: View {
+    let summary: AgentUsageSummary?
+    private static let availableHeight: CGFloat = 284
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Usage Delta")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.66))
+                .lineLimit(1)
+
+            if let summary {
+                VStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        UsageMetric(title: "Captured", value: AppFormatters.integer(summary.totalTokens))
+                        UsageMetric(title: "Today", value: AppFormatters.integer(summary.todayTokens))
+                        UsageMetric(title: "Avg/day", value: AppFormatters.integer(summary.averageTokensPerDay))
+                        UsageMetric(title: "Peak", value: AppFormatters.integer(summary.peakTokens))
+                    }
+
+                    UsageBarChart(summary: summary)
+
+                    VStack {
+                        Spacer(minLength: 0)
+                        Text("Captured after FloatMon started · Last: \(lastCapturedLabel(for: summary))")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.42))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 28)
+                }
+            } else {
+                Text("Codex sqlite state is unavailable")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.44))
+                    .frame(maxWidth: .infinity, minHeight: 176, alignment: .center)
+                    .background {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.white.opacity(0.055))
+                    }
+            }
+        }
+        .frame(maxHeight: Self.availableHeight, alignment: .top)
+    }
+
+    private func lastCapturedLabel(for summary: AgentUsageSummary) -> String {
+        guard let lastCapturedAt = summary.lastCapturedAt else { return "--" }
+        return Self.lastCapturedFormatter.string(from: lastCapturedAt)
+    }
+
+    private static let lastCapturedFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+}
+
+private struct UsageMetric: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.42))
+                .lineLimit(1)
+
+            Text(value)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.84))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.white.opacity(0.055))
+        }
+    }
+}
+
+private struct UsageBarChart: View {
+    let summary: AgentUsageSummary
+    private static let chartFrameHeight: CGFloat = 160
+
+    var body: some View {
+        GeometryReader { proxy in
+            let axisWidth: CGFloat = 52
+            let labelHeight: CGFloat = 18
+            let chartHeight = max(proxy.size.height - labelHeight - 8, 1)
+            let peak = max(summary.peakTokens, 1)
+
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(AppFormatters.compactInteger(peak))
+                    Spacer()
+                    Text(AppFormatters.compactInteger(max(peak / 2, 0)))
+                    Spacer()
+                    Text("0")
+                }
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.42))
+                .monospacedDigit()
+                .frame(width: axisWidth, height: chartHeight)
+
+                HStack(alignment: .bottom, spacing: 6) {
+                    ForEach(Array(summary.buckets.enumerated()), id: \.offset) { _, bucket in
+                        UsageBar(bucket: bucket, peakTokens: peak, chartHeight: chartHeight)
+                    }
+                }
+            }
+        }
+        .frame(height: Self.chartFrameHeight)
+        .padding(.horizontal, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.white.opacity(0.055))
+        }
+    }
+}
+
+private struct UsageBar: View {
+    let bucket: AgentUsageBucket
+    let peakTokens: Int
+    let chartHeight: CGFloat
+
+    var body: some View {
+        let labelHeight: CGFloat = 18
+        let ratio = peakTokens > 0 ? CGFloat(bucket.tokensUsed) / CGFloat(peakTokens) : 0
+        let barHeight = max(chartHeight * ratio, 2)
+
+        VStack(spacing: 5) {
+            ZStack(alignment: .bottom) {
+                Capsule(style: .continuous)
+                    .fill(.white.opacity(0.07))
+
+                if bucket.tokensUsed > 0 {
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color(red: 0.00, green: 0.78, blue: 0.82),
+                                    Color(red: 0.25, green: 0.92, blue: 0.42)
+                                ],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                        )
+                        .frame(height: barHeight)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: chartHeight)
+
+            Text(Self.dateFormatter.string(from: bucket.date))
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.42))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .frame(height: labelHeight)
+        }
+        .frame(maxWidth: .infinity)
+        .hoverTooltip("\(Self.fullDateFormatter.string(from: bucket.date)) · \(AppFormatters.integer(bucket.tokensUsed)) tokens · \(AppFormatters.integer(bucket.threadCount)) threads")
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MM/dd"
+        return formatter
+    }()
+
+    private static let fullDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
 }
 
 @MainActor

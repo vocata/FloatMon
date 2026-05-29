@@ -13,6 +13,8 @@ final class CodexPathsTests: XCTestCase {
         XCTAssertEqual(paths.eventLogURL(threadID: "thread/with spaces").path, "/tmp/.floatmon/agents/codex/thread_with_spaces.jsonl")
         XCTAssertEqual(paths.eventLogURL(threadID: nil).path, "/tmp/.floatmon/agents/codex/unknown.jsonl")
         XCTAssertEqual(paths.stateJSON.path, "/tmp/.floatmon/agents/codex/state.json")
+        XCTAssertEqual(paths.usageDirectory.path, "/tmp/.floatmon/usage")
+        XCTAssertEqual(paths.usageSQLite(provider: .codex).path, "/tmp/.floatmon/usage/codex.sqlite")
         XCTAssertEqual(paths.stateSQLite.path, "/tmp/codex-home/state_5.sqlite")
         XCTAssertEqual(paths.goalsSQLite.path, "/tmp/codex-home/goals_1.sqlite")
     }

@@ -2,16 +2,19 @@ import Foundation
 
 struct CodexPaths {
     let codexHome: URL
+    let floatMonHome: URL
     let agentsHome: URL
 
     init(
         codexHome: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex", isDirectory: true),
-        agentsHome: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".floatmon", isDirectory: true)
-            .appendingPathComponent("agents", isDirectory: true)
+        floatMonHome: URL? = nil,
+        agentsHome: URL? = nil
     ) {
         self.codexHome = codexHome
-        self.agentsHome = agentsHome
+        self.floatMonHome = floatMonHome
+            ?? agentsHome?.deletingLastPathComponent()
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".floatmon", isDirectory: true)
+        self.agentsHome = agentsHome ?? self.floatMonHome.appendingPathComponent("agents", isDirectory: true)
     }
 
     var hooksJSON: URL {
@@ -20,6 +23,14 @@ struct CodexPaths {
 
     var floatMonDirectory: URL {
         agentsHome
+    }
+
+    var usageDirectory: URL {
+        floatMonHome.appendingPathComponent("usage", isDirectory: true)
+    }
+
+    func usageSQLite(provider: AgentProvider = .codex) -> URL {
+        usageDirectory.appendingPathComponent("\(provider.rawValue).sqlite")
     }
 
     func providerDirectory(provider: AgentProvider = .codex) -> URL {
