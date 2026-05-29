@@ -377,6 +377,10 @@ struct IslandView: View {
 
     private var collapsedAgentDetailLines: [String] {
         let snapshot = agentStore.snapshot
+        guard snapshot.hookStatus == .registered else {
+            return []
+        }
+
         var lines: [String] = []
 
         if let thread = snapshot.currentThread {
