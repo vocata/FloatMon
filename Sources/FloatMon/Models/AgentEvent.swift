@@ -33,10 +33,10 @@ struct AgentEvent: Codable, Equatable, Identifiable {
             parts.append(toolName)
         }
         if let detail = Self.nonEmpty(detail), detail != toolName {
-            parts.append(detail.singleLineSummary(maxLength: 180))
+            parts.append(detail.singleLineSummary(maxLength: 360))
         }
         if let message = Self.nonEmpty(message), message != detail {
-            parts.append(message.singleLineSummary(maxLength: 180))
+            parts.append(message.singleLineSummary(maxLength: 360))
         }
         return parts.joined(separator: " · ")
     }

@@ -61,6 +61,7 @@ final class AgentEventTests: XCTestCase {
     }
 
     func testBuildsCompactSummaryForHoverDisplay() {
+        let longMessage = String(repeating: "a", count: 340)
         let event = AgentEvent(
             provider: .codex,
             type: "PostToolUse",
@@ -68,12 +69,12 @@ final class AgentEventTests: XCTestCase {
             threadID: "thread-1",
             toolName: "Bash",
             detail: "git diff",
-            message: "ran command\nand checked output"
+            message: longMessage
         )
 
         XCTAssertEqual(event.displayToolLabel, "Bash")
-        XCTAssertEqual(event.displayBodyText, "ran command\nand checked output")
-        XCTAssertEqual(event.compactSummary, "PostToolUse · Bash · git diff · ran command and checked output")
+        XCTAssertEqual(event.displayBodyText, longMessage)
+        XCTAssertEqual(event.compactSummary, "PostToolUse · Bash · git diff · \(longMessage)")
     }
 
     func testReturnsNilForMalformedEventLine() {

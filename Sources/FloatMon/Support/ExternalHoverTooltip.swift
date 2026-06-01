@@ -388,7 +388,7 @@ private struct TooltipContent: View {
 
     private func lineLimit(for line: String) -> Int {
         if line.hasPrefix("Latest:") {
-            return 4
+            return 7
         }
         return 1
     }
