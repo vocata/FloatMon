@@ -15,7 +15,10 @@ struct IslandView: View {
         static let modeBadgeSize: CGFloat = 16
         static let modeBadgeIconSize: CGFloat = 8
         static let modeBadgeOffset = CGSize(width: -3, height: -3)
-        static let sortSlideAnimation = Animation.spring(response: 0.28, dampingFraction: 0.86)
+        static let sortSlideTravel: CGFloat = 46
+        static let sortSlideOutDuration: TimeInterval = 0.10
+        static let sortSlideInDuration: TimeInterval = 0.18
+        static let sortSlideOutMilliseconds = 100
         static let refreshDelayMilliseconds = 280
         static let postCloseRefreshDelayMilliseconds = 350
     }
@@ -31,7 +34,9 @@ struct IslandView: View {
     @State private var focusError: String?
     @State private var togglePressed = false
     @State private var collapsedFlipAngle: Double = 0
-    @State private var appSortSlideDirection: WindowSwipeDirection = .left
+    @State private var appSortSlideOffset: CGFloat = 0
+    @State private var appSortSlideOpacity = 1.0
+    @State private var isAppSortSliding = false
 
     init(store: ProcessStore, agentStore: AgentStore, resizeWindow: @escaping (Bool) -> Void) {
         _store = State(initialValue: store)
@@ -267,11 +272,13 @@ struct IslandView: View {
 
     private var collapsedAppHeader: some View {
         collapsedIconFrame(
-            icon: collapsedAppIcon,
+            icon: AppIconView(image: featuredApp?.icon, size: Metrics.collapsedIconSize),
             modeSystemImage: "square.grid.2x2",
             modeTint: .blue,
             status: statusDot(color: featuredPressureColor)
         )
+        .offset(x: appSortSlideOffset)
+        .opacity(appSortSlideOpacity)
         .externalHoverCard(
             title: "App · \(featuredApp?.name ?? "No open apps")",
             detailLines: collapsedAppDetailLines,
@@ -279,30 +286,6 @@ struct IslandView: View {
             image: featuredApp?.icon,
             tone: featuredPressureTone
         )
-    }
-
-    private var collapsedAppIcon: some View {
-        ZStack {
-            AppIconView(image: featuredApp?.icon, size: Metrics.collapsedIconSize)
-                .id(sortMode)
-                .transition(sortModeTransition)
-        }
-        .animation(Metrics.sortSlideAnimation, value: sortMode)
-    }
-
-    private var sortModeTransition: AnyTransition {
-        .asymmetric(
-            insertion: .move(edge: sortModeInsertionEdge).combined(with: .opacity),
-            removal: .move(edge: sortModeRemovalEdge).combined(with: .opacity)
-        )
-    }
-
-    private var sortModeInsertionEdge: Edge {
-        appSortSlideDirection == .left ? .trailing : .leading
-    }
-
-    private var sortModeRemovalEdge: Edge {
-        appSortSlideDirection == .left ? .leading : .trailing
     }
 
     private var collapsedAgentHeader: some View {
@@ -542,10 +525,29 @@ struct IslandView: View {
 
         let targetMode: ProcessSortMode = direction == .left ? .cpu : .memory
         guard sortMode != targetMode else { return }
+        guard !isAppSortSliding else { return }
 
-        appSortSlideDirection = direction
-        withAnimation(Metrics.sortSlideAnimation) {
+        isAppSortSliding = true
+        let outgoingOffset = direction == .left ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel
+        let incomingOffset = -outgoingOffset
+
+        withAnimation(.easeIn(duration: Metrics.sortSlideOutDuration)) {
+            appSortSlideOffset = outgoingOffset
+            appSortSlideOpacity = 0
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(Metrics.sortSlideOutMilliseconds))
             sortMode = targetMode
+            appSortSlideOffset = incomingOffset
+
+            withAnimation(.easeOut(duration: Metrics.sortSlideInDuration)) {
+                appSortSlideOffset = 0
+                appSortSlideOpacity = 1
+            }
+
+            try? await Task.sleep(for: .milliseconds(Int(Metrics.sortSlideInDuration * 1000)))
+            isAppSortSliding = false
         }
     }
 

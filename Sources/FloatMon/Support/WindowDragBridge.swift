@@ -207,6 +207,9 @@ final class DragView: NSView {
             return
         }
 
+        let hasGesturePhase = !phase.isEmpty
+        guard !hasGesturePhase || !didTriggerHorizontalSwipe else { return }
+
         let deltaX = event.scrollingDeltaX
         let deltaY = event.scrollingDeltaY
         guard abs(deltaX) > abs(deltaY) * Metrics.horizontalDominanceRatio else {
@@ -214,9 +217,6 @@ final class DragView: NSView {
             super.scrollWheel(with: event)
             return
         }
-
-        let hasGesturePhase = !phase.isEmpty
-        guard !hasGesturePhase || !didTriggerHorizontalSwipe else { return }
 
         accumulatedHorizontalScroll += deltaX
         guard abs(accumulatedHorizontalScroll) >= Metrics.swipeThreshold else { return }
