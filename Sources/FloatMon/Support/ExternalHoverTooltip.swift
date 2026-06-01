@@ -335,6 +335,8 @@ private struct TooltipContent: View {
     let payload: ExternalHoverTooltipPayload
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+
         HStack(alignment: .top, spacing: 9) {
             icon
 
@@ -368,14 +370,14 @@ private struct TooltipContent: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.black.opacity(0.86))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(.white.opacity(0.10), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.26), radius: 12, y: 4)
+            shape
+                .fill(.black.opacity(0.92))
         }
+        .overlay {
+            shape
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+        }
+        .clipShape(shape)
     }
 
     private var icon: some View {

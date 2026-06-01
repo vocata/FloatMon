@@ -85,6 +85,8 @@ private struct AgentCompletionToastView: View {
     let notice: AgentCompletionNotice
 
     var body: some View {
+        let shape = Capsule(style: .continuous)
+
         HStack(spacing: 9) {
             Circle()
                 .fill(Color(red: 0.25, green: 0.92, blue: 0.42))
@@ -108,13 +110,13 @@ private struct AgentCompletionToastView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background {
-            Capsule(style: .continuous)
-                .fill(.black.opacity(0.86))
-                .overlay {
-                    Capsule(style: .continuous)
-                        .stroke(.white.opacity(0.10), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.28), radius: 14, y: 4)
+            shape
+                .fill(.black.opacity(0.92))
         }
+        .overlay {
+            shape
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+        }
+        .clipShape(shape)
     }
 }
