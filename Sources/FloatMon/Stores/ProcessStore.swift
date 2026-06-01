@@ -6,6 +6,7 @@ import Observation
 final class ProcessStore {
     var apps: [AppProcess] = []
     var lastUpdated = Date()
+    var isAccessibilityTrusted = false
 
     private let sampler: ProcessSampler
     private let historyDuration: TimeInterval
@@ -21,7 +22,7 @@ final class ProcessStore {
         self.sampler = sampler
         self.historyDuration = historyDuration
 
-        refresh()
+        refreshAccessibilityPermission()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
@@ -31,6 +32,13 @@ final class ProcessStore {
 
     func refresh() {
         guard !isRefreshing else { return }
+        guard updateAccessibilityPermission() else {
+            apps = []
+            historyByPID = [:]
+            lastUpdated = Date()
+            return
+        }
+
         isRefreshing = true
 
         Task { [sampler] in
@@ -45,6 +53,25 @@ final class ProcessStore {
     func stop() {
         timer?.invalidate()
         timer = nil
+    }
+
+    @discardableResult
+    func refreshAccessibilityPermission() -> Bool {
+        let isTrusted = updateAccessibilityPermission()
+        if isTrusted {
+            refresh()
+        } else {
+            apps = []
+            historyByPID = [:]
+            lastUpdated = Date()
+        }
+        return isTrusted
+    }
+
+    private func updateAccessibilityPermission() -> Bool {
+        let isTrusted = AccessibilityPermissionService.isTrusted(prompt: false)
+        isAccessibilityTrusted = isTrusted
+        return isTrusted
     }
 
     private func enrich(_ apps: [AppProcess], now: Date) -> [AppProcess] {

@@ -3,7 +3,10 @@ import SwiftUI
 
 struct ExpandedProcessList: View {
     let apps: [AppProcess]
+    let hasAccessibilityPermission: Bool
     @Binding var sortMode: ProcessSortMode
+    let openAccessibilitySettings: () -> Void
+    let recheckAccessibilityPermission: () -> Bool
     let activate: (AppProcess) -> Void
     let focusWindow: (AppWindowInfo, AppProcess) -> Void
     let closeWindow: (AppWindowInfo, AppProcess) -> Void
@@ -11,6 +14,7 @@ struct ExpandedProcessList: View {
 
     @State private var expandedAppIDs: Set<pid_t> = []
     @State private var searchText = ""
+    @State private var permissionMessage: String?
 
     private var sortedApps: [AppProcess] {
         sortMode.sorted(apps)
@@ -74,35 +78,46 @@ struct ExpandedProcessList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            CommandSearchField(text: $searchText)
-                .padding(.horizontal, 18)
 
-            if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(sortedApps) { app in
-                            processSection(for: app)
+            if hasAccessibilityPermission {
+                CommandSearchField(text: $searchText)
+                    .padding(.horizontal, 18)
+
+                if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(sortedApps) { app in
+                                processSection(for: app)
+                            }
                         }
+                        .animation(.spring(response: 0.42, dampingFraction: 0.9), value: sortMode)
+                        .animation(.spring(response: 0.28, dampingFraction: 0.9), value: expandedAppIDs)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 16)
                     }
-                    .animation(.spring(response: 0.42, dampingFraction: 0.9), value: sortMode)
-                    .animation(.spring(response: 0.28, dampingFraction: 0.9), value: expandedAppIDs)
+                    .scrollIndicators(.automatic)
+                } else {
+                    CommandResultList(
+                        matches: commandMatches,
+                        activate: activate,
+                        focusWindow: focusWindow,
+                        closeWindow: closeWindow,
+                        requestForceQuit: requestForceQuit
+                    )
                     .padding(.horizontal, 12)
-                    .padding(.bottom, 16)
                 }
-                .scrollIndicators(.automatic)
             } else {
-                CommandResultList(
-                    matches: commandMatches,
-                    activate: activate,
-                    focusWindow: focusWindow,
-                    closeWindow: closeWindow,
-                    requestForceQuit: requestForceQuit
-                )
-                .padding(.horizontal, 12)
+                accessibilityPermissionContent
+                    .transition(.opacity)
             }
         }
         .onChange(of: expandableAppIDs) { _, ids in
             expandedAppIDs.formIntersection(ids)
+        }
+        .onChange(of: hasAccessibilityPermission) { _, isTrusted in
+            if isTrusted {
+                permissionMessage = nil
+            }
         }
     }
 
@@ -111,13 +126,78 @@ struct ExpandedProcessList: View {
             Text("Open Apps")
                 .font(.system(size: 15, weight: .semibold))
             Spacer()
-            Text("\(apps.count)")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.55))
-            SortModeControl(selection: $sortMode)
+            if hasAccessibilityPermission {
+                Text("\(apps.count)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.55))
+                SortModeControl(selection: $sortMode)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.top, 14)
+    }
+
+    private var accessibilityPermissionContent: some View {
+        VStack(spacing: 10) {
+            Spacer(minLength: 4)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.white.opacity(0.10))
+
+                Image(systemName: "accessibility")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.86))
+            }
+            .frame(width: 42, height: 42)
+
+            VStack(spacing: 4) {
+                Text("Accessibility Permission Required")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(1)
+
+                Text("Authorize FloatMon to inspect windows, focus apps, and close app windows.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.54))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .frame(maxWidth: 360)
+            }
+
+            if let permissionMessage {
+                Text(permissionMessage)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.orange.opacity(0.86))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(maxWidth: 340)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    openAccessibilitySettings()
+                } label: {
+                    Label("Open Settings", systemImage: "gearshape")
+                }
+                .buttonStyle(AppPermissionButtonStyle(isPrimary: true))
+
+                Button {
+                    if recheckAccessibilityPermission() {
+                        permissionMessage = nil
+                    } else {
+                        permissionMessage = "Permission is still missing. Enable FloatMon in Accessibility, then recheck."
+                    }
+                } label: {
+                    Label("Recheck", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(AppPermissionButtonStyle(isPrimary: false))
+            }
+
+            Spacer(minLength: 6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 18)
     }
 
     private func appMatchScore(_ app: AppProcess, query: String) -> Int? {
@@ -250,6 +330,24 @@ private struct SearchTextField: NSViewRepresentable {
             guard let textField = notification.object as? NSTextField else { return }
             text = textField.stringValue
         }
+    }
+}
+
+private struct AppPermissionButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white.opacity(isPrimary ? 0.90 : 0.72))
+            .labelStyle(.titleAndIcon)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(.white.opacity(isPrimary ? 0.14 : 0.08))
+            }
+            .opacity(configuration.isPressed ? 0.76 : 1)
     }
 }
 

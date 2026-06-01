@@ -118,7 +118,14 @@ struct IslandView: View {
                 if monitorMode == .apps {
                     ExpandedProcessList(
                         apps: store.apps,
+                        hasAccessibilityPermission: store.isAccessibilityTrusted,
                         sortMode: $sortMode,
+                        openAccessibilitySettings: {
+                            AccessibilityPermissionService.openSettings()
+                        },
+                        recheckAccessibilityPermission: {
+                            store.refreshAccessibilityPermission()
+                        },
                         activate: activateApp,
                         focusWindow: focusWindow,
                         closeWindow: closeWindow,
@@ -429,6 +436,8 @@ struct IslandView: View {
         }
         if mode == .agent {
             agentStore.refreshHookStatus()
+        } else {
+            store.refreshAccessibilityPermission()
         }
     }
 
