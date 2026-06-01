@@ -11,6 +11,7 @@ struct IslandView: View {
         static let flipFirstHalfDuration: TimeInterval = 0.12
         static let flipSecondHalfDuration: TimeInterval = 0.16
         static let flipFirstHalfMilliseconds = 120
+        static let flipSecondHalfMilliseconds = 160
         static let flipMidpointAngle: Double = 90
         static let modeBadgeSize: CGFloat = 16
         static let modeBadgeIconSize: CGFloat = 8
@@ -34,6 +35,7 @@ struct IslandView: View {
     @State private var focusError: String?
     @State private var togglePressed = false
     @State private var collapsedFlipAngle: Double = 0
+    @State private var isCollapsedHoverSuppressed = false
     @State private var appSortSlideOffset: CGFloat = 0
     @State private var appSortSlideOpacity = 1.0
     @State private var isAppSortSliding = false
@@ -284,7 +286,8 @@ struct IslandView: View {
             detailLines: collapsedAppDetailLines,
             systemImage: "app.fill",
             image: featuredApp?.icon,
-            tone: featuredPressureTone
+            tone: featuredPressureTone,
+            isEnabled: !isCollapsedHoverSuppressed
         )
     }
 
@@ -303,7 +306,8 @@ struct IslandView: View {
             tone: agentStatusTone,
             onHoverChanged: { isHovering in
                 agentStore.setCompletionNoticeHovered(isHovering)
-            }
+            },
+            isEnabled: !isCollapsedHoverSuppressed
         )
     }
 
@@ -506,6 +510,7 @@ struct IslandView: View {
         guard !expanded, collapsedFlipAngle == 0 else { return }
 
         let nextMode: AgentMonitorMode = monitorMode == .apps ? .agent : .apps
+        isCollapsedHoverSuppressed = true
         withAnimation(.easeIn(duration: Metrics.flipFirstHalfDuration)) {
             collapsedFlipAngle = Metrics.flipMidpointAngle
         }
@@ -516,6 +521,8 @@ struct IslandView: View {
             withAnimation(.easeOut(duration: Metrics.flipSecondHalfDuration)) {
                 collapsedFlipAngle = 0
             }
+            try? await Task.sleep(for: .milliseconds(Metrics.flipSecondHalfMilliseconds))
+            isCollapsedHoverSuppressed = false
             refreshForMonitorMode(nextMode)
         }
     }

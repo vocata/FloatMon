@@ -68,10 +68,15 @@ enum ExternalHoverTooltipController {
 
 struct ExternalHoverTooltipModifier: ViewModifier {
     let payload: ExternalHoverTooltipPayload
+    let isEnabled: Bool
 
     func body(content: Content) -> some View {
-        content.overlay {
-            ExternalTooltipTrackingView(payload: payload)
+        if isEnabled {
+            content.overlay {
+                ExternalTooltipTrackingView(payload: payload)
+            }
+        } else {
+            content
         }
     }
 }
@@ -89,7 +94,8 @@ extension View {
         image: NSImage? = nil,
         agentProvider: AgentProvider? = nil,
         tone: ExternalHoverTooltipTone = .neutral,
-        onHoverChanged: ((Bool) -> Void)? = nil
+        onHoverChanged: ((Bool) -> Void)? = nil,
+        isEnabled: Bool = true
     ) -> some View {
         modifier(
             ExternalHoverTooltipModifier(
@@ -102,7 +108,8 @@ extension View {
                     agentProvider: agentProvider,
                     tone: tone,
                     onHoverChanged: onHoverChanged
-                )
+                ),
+                isEnabled: isEnabled
             )
         )
     }
@@ -131,6 +138,7 @@ private final class TooltipTrackingNSView: NSView {
 
     private var isHovering = false
     private var hoverID: Int?
+    private var hoverSyncScheduled = false
 
     init(payload: ExternalHoverTooltipPayload) {
         self.payload = payload
@@ -154,25 +162,20 @@ private final class TooltipTrackingNSView: NSView {
                 userInfo: nil
             )
         )
+        scheduleHoverSync()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        scheduleHoverSync()
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHovering = true
-        payload.onHoverChanged?(true)
-        let hoverID = ExternalTooltipPanel.shared.beginHover()
-        self.hoverID = hoverID
-        ExternalTooltipPanel.shared.show(payload: payload, near: screenRect(), hoverID: hoverID)
+        setHovering(true)
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHovering = false
-        payload.onHoverChanged?(false)
-        if let hoverID {
-            ExternalTooltipPanel.shared.endHover(hoverID)
-        } else {
-            ExternalTooltipPanel.shared.hide()
-        }
-        self.hoverID = nil
+        setHovering(false)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -184,6 +187,49 @@ private final class TooltipTrackingNSView: NSView {
         guard let window else { return .zero }
         let windowRect = convert(bounds, to: nil)
         return window.convertToScreen(windowRect)
+    }
+
+    private func scheduleHoverSync() {
+        guard !hoverSyncScheduled else { return }
+        hoverSyncScheduled = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            hoverSyncScheduled = false
+            syncHoverStateWithCurrentMouse()
+        }
+    }
+
+    private func syncHoverStateWithCurrentMouse() {
+        guard let window else { return }
+
+        let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setHovering(bounds.contains(location))
+    }
+
+    private func setHovering(_ hovering: Bool) {
+        if hovering {
+            if !isHovering {
+                isHovering = true
+                payload.onHoverChanged?(true)
+                let hoverID = ExternalTooltipPanel.shared.beginHover()
+                self.hoverID = hoverID
+            }
+
+            ExternalTooltipPanel.shared.show(payload: payload, near: screenRect(), hoverID: hoverID)
+            return
+        }
+
+        guard isHovering || hoverID != nil else { return }
+
+        isHovering = false
+        payload.onHoverChanged?(false)
+        if let hoverID {
+            ExternalTooltipPanel.shared.endHover(hoverID)
+        } else {
+            ExternalTooltipPanel.shared.hide()
+        }
+        self.hoverID = nil
     }
 }
 
@@ -262,6 +308,7 @@ private final class ExternalTooltipPanel {
     }
 
     func endPointerInteraction() {
+        guard pointerInteractionActive else { return }
         pointerInteractionActive = false
         activeHoverID = nil
         currentHoverIDs.removeAll()
