@@ -254,7 +254,7 @@ struct IslandView: View {
         }
         .externalHoverCard(
             title: featuredApp?.name ?? "No open apps",
-            subtitle: collapsedAppSubtitle,
+            detailLines: collapsedAppDetailLines,
             systemImage: "app.fill",
             image: featuredApp?.icon,
             tone: featuredPressureTone
@@ -388,12 +388,15 @@ struct IslandView: View {
         }
     }
 
-    private var collapsedAppSubtitle: String? {
+    private var collapsedAppDetailLines: [String] {
         guard let featuredApp else {
-            return nil
+            return []
         }
 
-        return "\(AppFormatters.cpu(featuredApp.cpuPercent)) CPU · \(AppFormatters.memory(featuredApp.memoryBytes))"
+        return [
+            "CPU: \(AppFormatters.cpu(featuredApp.cpuPercent))",
+            "Memory: \(AppFormatters.memory(featuredApp.memoryBytes))"
+        ]
     }
 
     private var collapsedAgentDetailLines: [String] {
