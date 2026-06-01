@@ -16,6 +16,7 @@ final class AgentStore {
     private var refreshTask: Task<Void, Never>?
     private var timer: Timer?
     private var completionNotifier = AgentCompletionNotifier()
+    private var isCompletionNoticeHovered = false
 
     init(
         paths: CodexPaths = CodexPaths(),
@@ -26,7 +27,7 @@ final class AgentStore {
         self.reader = CodexSnapshotReader(paths: paths)
         self.registrationService = CodexHookRegistrationService(paths: paths)
         self.executablePath = executablePath
-        refresh()
+        refreshHookStatus()
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
@@ -58,16 +59,16 @@ final class AgentStore {
 
             guard let self, !Task.isCancelled else { return }
             self.snapshot = snapshot
-            if let notice = completionNotifier.notice(for: snapshot) {
-                completionNotice = notice
-            }
+            self.updateCompletionNotice(for: snapshot)
             self.isRefreshing = false
         }
     }
 
-    func dismissCompletionNotice(id: String? = nil) {
-        guard id == nil || completionNotice?.id == id else { return }
-        completionNotice = nil
+    func setCompletionNoticeHovered(_ isHovered: Bool) {
+        isCompletionNoticeHovered = isHovered
+        if isHovered {
+            clearCompletionNotice(reason: .agentHover)
+        }
     }
 
     func refreshHookStatus() {
@@ -103,4 +104,28 @@ final class AgentStore {
         }
         refresh(force: true)
     }
+
+    private func updateCompletionNotice(for snapshot: AgentSnapshot) {
+        if let notice = completionNotifier.notice(for: snapshot) {
+            if isCompletionNoticeHovered {
+                clearCompletionNotice(reason: .agentHover)
+            } else {
+                completionNotice = notice
+            }
+            return
+        }
+
+        if let completionNotice, completionNotifier.shouldDismiss(completionNotice, for: snapshot) {
+            clearCompletionNotice(reason: .newerEvent)
+        }
+    }
+
+    private func clearCompletionNotice(reason _: CompletionNoticeClearReason) {
+        completionNotice = nil
+    }
+}
+
+private enum CompletionNoticeClearReason {
+    case agentHover
+    case newerEvent
 }

@@ -19,6 +19,28 @@ struct AgentEvent: Codable, Equatable, Identifiable {
         return false
     }
 
+    var displayBodyText: String? {
+        Self.nonEmpty(message) ?? Self.nonEmpty(detail)
+    }
+
+    var displayToolLabel: String {
+        Self.nonEmpty(toolName) ?? Self.nonEmpty(detail) ?? ""
+    }
+
+    var compactSummary: String {
+        var parts = [type]
+        if let toolName = Self.nonEmpty(toolName) {
+            parts.append(toolName)
+        }
+        if let detail = Self.nonEmpty(detail), detail != toolName {
+            parts.append(detail.singleLineSummary(maxLength: 180))
+        }
+        if let message = Self.nonEmpty(message), message != detail {
+            parts.append(message.singleLineSummary(maxLength: 180))
+        }
+        return parts.joined(separator: " · ")
+    }
+
     private enum CodingKeys: String, CodingKey {
         case provider
         case type
@@ -83,5 +105,22 @@ struct AgentEvent: Codable, Equatable, Identifiable {
 
     static func decodeLossyJSONLine(_ line: String) -> AgentEvent? {
         try? decodeJSONLine(line)
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        return value
+    }
+}
+
+private extension String {
+    func singleLineSummary(maxLength: Int) -> String {
+        let normalized = components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard normalized.count > maxLength, maxLength > 1 else {
+            return normalized
+        }
+        return String(normalized.prefix(maxLength - 1)) + "..."
     }
 }

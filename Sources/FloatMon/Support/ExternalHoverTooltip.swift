@@ -41,6 +41,7 @@ struct ExternalHoverTooltipPayload {
     let image: NSImage?
     let agentProvider: AgentProvider?
     let tone: ExternalHoverTooltipTone
+    let onHoverChanged: ((Bool) -> Void)?
 }
 
 enum ExternalHoverTooltipController {
@@ -87,7 +88,8 @@ extension View {
         systemImage: String? = nil,
         image: NSImage? = nil,
         agentProvider: AgentProvider? = nil,
-        tone: ExternalHoverTooltipTone = .neutral
+        tone: ExternalHoverTooltipTone = .neutral,
+        onHoverChanged: ((Bool) -> Void)? = nil
     ) -> some View {
         modifier(
             ExternalHoverTooltipModifier(
@@ -98,7 +100,8 @@ extension View {
                     systemImage: systemImage,
                     image: image,
                     agentProvider: agentProvider,
-                    tone: tone
+                    tone: tone,
+                    onHoverChanged: onHoverChanged
                 )
             )
         )
@@ -155,6 +158,7 @@ private final class TooltipTrackingNSView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovering = true
+        payload.onHoverChanged?(true)
         let hoverID = ExternalTooltipPanel.shared.beginHover()
         self.hoverID = hoverID
         ExternalTooltipPanel.shared.show(payload: payload, near: screenRect(), hoverID: hoverID)
@@ -162,6 +166,7 @@ private final class TooltipTrackingNSView: NSView {
 
     override func mouseExited(with event: NSEvent) {
         isHovering = false
+        payload.onHoverChanged?(false)
         if let hoverID {
             ExternalTooltipPanel.shared.endHover(hoverID)
         } else {
@@ -359,13 +364,14 @@ private struct TooltipContent: View {
                             Text(line)
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.48))
-                                .lineLimit(1)
+                                .lineLimit(lineLimit(for: line))
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .padding(.top, 1)
                 }
             }
-            .frame(maxWidth: 190, alignment: .leading)
+            .frame(maxWidth: 260, alignment: .leading)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -378,6 +384,13 @@ private struct TooltipContent: View {
                 .stroke(.white.opacity(0.10), lineWidth: 1)
         }
         .clipShape(shape)
+    }
+
+    private func lineLimit(for line: String) -> Int {
+        if line.hasPrefix("Latest:") {
+            return 4
+        }
+        return 1
     }
 
     private var icon: some View {

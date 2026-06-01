@@ -803,23 +803,11 @@ private struct EventRow: View {
     }
 
     private var toolLabel: String {
-        if let toolName = event.toolName, !toolName.isEmpty {
-            return toolName
-        }
-        if let detail = event.detail, !detail.isEmpty {
-            return detail
-        }
-        return ""
+        event.displayToolLabel
     }
 
     private var bodyText: String? {
-        if let message = event.message, !message.isEmpty {
-            return message
-        }
-        if let detail = event.detail, !detail.isEmpty {
-            return detail
-        }
-        return nil
+        event.displayBodyText
     }
 
     private static let timeFormatter: DateFormatter = {
@@ -939,13 +927,7 @@ private struct EventDetailPopover: View {
     }
 
     private var detailText: String {
-        if let message = event.message, !message.isEmpty {
-            return message
-        }
-        if let detail = event.detail, !detail.isEmpty {
-            return detail
-        }
-        return ""
+        event.displayBodyText ?? ""
     }
 
     private func showCopiedDetail() {

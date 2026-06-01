@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct IslandView: View {
@@ -22,8 +21,6 @@ struct IslandView: View {
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
     @State private var togglePressed = false
-    @State private var completionPulse = false
-    @State private var completionDismissTask: Task<Void, Never>?
 
     init(store: ProcessStore, agentStore: AgentStore, resizeWindow: @escaping (Bool) -> Void) {
         _store = State(initialValue: store)
@@ -98,8 +95,9 @@ struct IslandView: View {
             } message: {
                 Text(focusError ?? "")
             }
-            .onChange(of: agentStore.completionNotice?.id) { _, _ in
-                showCompletionNoticeIfNeeded()
+            .onChange(of: agentStore.completionNotice?.id) { _, noticeID in
+                guard noticeID != nil else { return }
+                setMonitorMode(.agent)
             }
     }
 
@@ -260,14 +258,17 @@ struct IslandView: View {
         ZStack(alignment: .bottomTrailing) {
             AgentIcon(provider: agentStore.snapshot.provider, size: 38, fontSize: 8)
 
-            statusDot(color: agentStatusColor, isPulsing: completionPulse)
+            statusDot(color: agentStatusColor, isPulsing: agentStore.completionNotice != nil)
         }
         .externalHoverCard(
             title: agentStore.snapshot.provider.displayName,
             subtitle: agentStore.snapshot.hookStatus.label,
             detailLines: collapsedAgentDetailLines,
             agentProvider: agentStore.snapshot.provider,
-            tone: agentStatusTone
+            tone: agentStatusTone,
+            onHoverChanged: { isHovering in
+                agentStore.setCompletionNoticeHovered(isHovering)
+            }
         )
     }
 
@@ -277,11 +278,8 @@ struct IslandView: View {
             .frame(width: 9, height: 9)
             .overlay {
                 if isPulsing {
-                    Circle()
-                        .stroke(color.opacity(0.72), lineWidth: 2)
-                        .scaleEffect(2.2)
-                        .opacity(0.58)
-                        .transition(.opacity.combined(with: .scale))
+                    PulsingStatusRing(color: color)
+                        .transition(.opacity)
                 }
             }
             .overlay {
@@ -407,15 +405,14 @@ struct IslandView: View {
             lines.append("No active thread")
         }
 
-        if let latestEventType = snapshot.latestEventType {
-            lines.append("Latest: \(latestEventType)")
+        if let latestEvent = snapshot.recentEvents.first {
+            lines.append("Latest: \(latestEvent.compactSummary)")
         }
 
         return lines
     }
 
     private func toggleExpanded() {
-        dismissCompletionNotice()
         let nextExpanded = !expanded
         resizeWindow(nextExpanded)
         withAnimation(Metrics.animation) {
@@ -424,52 +421,6 @@ struct IslandView: View {
         if nextExpanded {
             refreshAfterExpansion()
         }
-    }
-
-    private func showCompletionNoticeIfNeeded() {
-        guard let notice = agentStore.completionNotice else { return }
-        AgentCompletionToastController.show(notice, near: islandFrameOnScreen)
-
-        withAnimation(.easeOut(duration: 0.18)) {
-            completionPulse = true
-        }
-
-        completionDismissTask?.cancel()
-        completionDismissTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1_100))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.20)) {
-                completionPulse = false
-            }
-
-            try? await Task.sleep(for: .milliseconds(2_900))
-            guard !Task.isCancelled else { return }
-            AgentCompletionToastController.hide()
-            agentStore.dismissCompletionNotice(id: notice.id)
-        }
-    }
-
-    private func dismissCompletionNotice() {
-        completionDismissTask?.cancel()
-        completionDismissTask = nil
-        completionPulse = false
-        AgentCompletionToastController.hide()
-        agentStore.dismissCompletionNotice()
-    }
-
-    private var islandFrameOnScreen: CGRect {
-        if let frame = NSApp.windows.first(where: { $0 is IslandWindow && $0.isVisible })?.frame {
-            return frame
-        }
-
-        let visibleFrame = NSScreen.main?.visibleFrame ?? .zero
-        let size = islandWindowSize
-        return CGRect(
-            x: visibleFrame.maxX - size.width - 22,
-            y: visibleFrame.midY - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
     }
 
     private func setMonitorMode(_ mode: AgentMonitorMode) {
@@ -538,5 +489,25 @@ struct IslandView: View {
 
     private func accessibilityPermissionMessage(action: String, app: AppProcess) -> String {
         "macOS requires Accessibility permission to \(action) a specific window inside \(app.name). If you already enabled it, quit FloatMon and launch the existing app again without rebuilding so macOS rechecks the same signed bundle."
+    }
+}
+
+private struct PulsingStatusRing: View {
+    let color: Color
+    @State private var isAnimating = false
+
+    var body: some View {
+        Circle()
+            .stroke(color.opacity(isAnimating ? 0 : 0.72), lineWidth: 2)
+            .scaleEffect(isAnimating ? 2.4 : 1.0)
+            .onAppear {
+                isAnimating = false
+                withAnimation(.easeOut(duration: 1.15).repeatForever(autoreverses: false)) {
+                    isAnimating = true
+                }
+            }
+            .onDisappear {
+                isAnimating = false
+            }
     }
 }

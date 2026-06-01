@@ -60,6 +60,22 @@ final class AgentEventTests: XCTestCase {
         XCTAssertTrue(messageEvent.isRich)
     }
 
+    func testBuildsCompactSummaryForHoverDisplay() {
+        let event = AgentEvent(
+            provider: .codex,
+            type: "PostToolUse",
+            timestamp: Date(timeIntervalSince1970: 1779868649.25),
+            threadID: "thread-1",
+            toolName: "Bash",
+            detail: "git diff",
+            message: "ran command\nand checked output"
+        )
+
+        XCTAssertEqual(event.displayToolLabel, "Bash")
+        XCTAssertEqual(event.displayBodyText, "ran command\nand checked output")
+        XCTAssertEqual(event.compactSummary, "PostToolUse · Bash · git diff · ran command and checked output")
+    }
+
     func testReturnsNilForMalformedEventLine() {
         XCTAssertNil(AgentEvent.decodeLossyJSONLine("{not-json"))
     }

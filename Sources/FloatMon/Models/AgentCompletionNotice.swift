@@ -2,10 +2,6 @@ import Foundation
 
 struct AgentCompletionNotice: Equatable, Identifiable {
     let id: String
-    let provider: AgentProvider
-    let title: String
-    let detail: String
-    let timestamp: Date
 }
 
 struct AgentCompletionNotifier {
@@ -27,22 +23,13 @@ struct AgentCompletionNotifier {
             return nil
         }
 
-        return AgentCompletionNotice(
-            id: event.id,
-            provider: event.provider,
-            title: "\(event.provider.displayName) finished",
-            detail: detail(for: event, snapshot: snapshot),
-            timestamp: event.timestamp
-        )
+        return AgentCompletionNotice(id: event.id)
     }
 
-    private func detail(for event: AgentEvent, snapshot: AgentSnapshot) -> String {
-        if let message = event.message, !message.isEmpty {
-            return message
+    func shouldDismiss(_ notice: AgentCompletionNotice, for snapshot: AgentSnapshot) -> Bool {
+        guard let latestEvent = snapshot.recentEvents.first else {
+            return false
         }
-        if let thread = snapshot.currentThread, thread.id == event.threadID {
-            return thread.title
-        }
-        return "Task completed"
+        return latestEvent.id != notice.id
     }
 }

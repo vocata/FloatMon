@@ -22,8 +22,6 @@ final class AgentCompletionNotifierTests: XCTestCase {
         let secondNotice = notifier.notice(for: snapshot(events: [newStop, oldStop]))
 
         XCTAssertEqual(firstNotice.id, newStop.id)
-        XCTAssertEqual(firstNotice.title, "Codex finished")
-        XCTAssertEqual(firstNotice.detail, "new")
         XCTAssertNil(secondNotice)
     }
 
@@ -37,14 +35,14 @@ final class AgentCompletionNotifierTests: XCTestCase {
         XCTAssertNil(notice)
     }
 
-    func testUsesMatchingThreadTitleWhenStopMessageIsMissing() throws {
+    func testReturnsNoticeForStopWithoutMessage() throws {
         var notifier = AgentCompletionNotifier()
         XCTAssertNil(notifier.notice(for: snapshot(events: [])))
         let stop = event(type: "Stop", timestamp: 20, threadID: "thread-1")
 
         let notice = try XCTUnwrap(notifier.notice(for: snapshot(events: [stop], threadID: "thread-1")))
 
-        XCTAssertEqual(notice.detail, "Refactor parser")
+        XCTAssertEqual(notice.id, stop.id)
     }
 
     func testShowsNoticeForNewStopEvenWhenHookStatusHasNotBeenChecked() throws {
@@ -55,7 +53,23 @@ final class AgentCompletionNotifierTests: XCTestCase {
         let notice = try XCTUnwrap(notifier.notice(for: snapshot(events: [stop], hookStatus: .unknown)))
 
         XCTAssertEqual(notice.id, stop.id)
-        XCTAssertEqual(notice.detail, "done")
+    }
+
+    func testKeepsNoticeWhenCompletionEventIsStillLatestEvent() {
+        let notifier = AgentCompletionNotifier()
+        let stop = event(type: "Stop", timestamp: 20, threadID: "thread-1")
+        let notice = AgentCompletionNotice(id: stop.id)
+
+        XCTAssertFalse(notifier.shouldDismiss(notice, for: snapshot(events: [stop])))
+    }
+
+    func testDismissesNoticeWhenNewerEventArrives() {
+        let notifier = AgentCompletionNotifier()
+        let stop = event(type: "Stop", timestamp: 20, threadID: "thread-1")
+        let newerEvent = event(type: "PreToolUse", timestamp: 30, threadID: "thread-1")
+        let notice = AgentCompletionNotice(id: stop.id)
+
+        XCTAssertTrue(notifier.shouldDismiss(notice, for: snapshot(events: [newerEvent, stop])))
     }
 
     private func event(
