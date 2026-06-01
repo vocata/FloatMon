@@ -14,6 +14,7 @@ enum WindowClickPolicy {
 struct WindowDragBridge: NSViewRepresentable {
     let onClick: () -> Void
     var onPressChanged: (Bool) -> Void = { _ in }
+    var onRightClick: (() -> Void)?
 
     func makeNSView(context: Context) -> DragView {
         DragView(coordinator: context.coordinator)
@@ -22,25 +23,30 @@ struct WindowDragBridge: NSViewRepresentable {
     func updateNSView(_ nsView: DragView, context: Context) {
         context.coordinator.onClick = onClick
         context.coordinator.onPressChanged = onPressChanged
+        context.coordinator.onRightClick = onRightClick
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onClick: onClick,
-            onPressChanged: onPressChanged
+            onPressChanged: onPressChanged,
+            onRightClick: onRightClick
         )
     }
 
     final class Coordinator {
         var onClick: () -> Void
         var onPressChanged: (Bool) -> Void
+        var onRightClick: (() -> Void)?
 
         init(
             onClick: @escaping () -> Void,
-            onPressChanged: @escaping (Bool) -> Void
+            onPressChanged: @escaping (Bool) -> Void,
+            onRightClick: (() -> Void)?
         ) {
             self.onClick = onClick
             self.onPressChanged = onPressChanged
+            self.onRightClick = onRightClick
         }
     }
 }
@@ -144,6 +150,18 @@ final class DragView: NSView {
         Task { @MainActor in
             ExternalHoverTooltipController.endPointerInteraction()
         }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let onRightClick = coordinator.onRightClick else {
+            super.rightMouseDown(with: event)
+            return
+        }
+
+        Task { @MainActor in
+            ExternalHoverTooltipController.dismissActiveHover()
+        }
+        onRightClick()
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {

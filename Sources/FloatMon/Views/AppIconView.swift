@@ -14,7 +14,7 @@ struct AppIconView: View {
                 Image(systemName: "app.dashed")
                     .resizable()
                     .symbolRenderingMode(.hierarchical)
-                    .padding(6)
+                    .padding(4)
             }
         }
         .aspectRatio(contentMode: .fit)

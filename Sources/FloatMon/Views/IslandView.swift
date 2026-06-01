@@ -4,9 +4,17 @@ struct IslandView: View {
     private enum Metrics {
         static let collapsedWindowDiameter: CGFloat = 68
         static let collapsedBallDiameter: CGFloat = 64
+        static let collapsedIconSize: CGFloat = 38
         static let expandedSize = CGSize(width: 520, height: 460)
         static let animation = Animation.easeInOut(duration: 0.26)
         static let pressAnimation = Animation.easeOut(duration: 0.10)
+        static let flipFirstHalfDuration: TimeInterval = 0.12
+        static let flipSecondHalfDuration: TimeInterval = 0.16
+        static let flipFirstHalfMilliseconds = 120
+        static let flipMidpointAngle: Double = 90
+        static let modeBadgeSize: CGFloat = 16
+        static let modeBadgeIconSize: CGFloat = 8
+        static let modeBadgeOffset = CGSize(width: -3, height: -3)
         static let refreshDelayMilliseconds = 280
         static let postCloseRefreshDelayMilliseconds = 350
     }
@@ -21,6 +29,7 @@ struct IslandView: View {
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
     @State private var togglePressed = false
+    @State private var collapsedFlipAngle: Double = 0
 
     init(store: ProcessStore, agentStore: AgentStore, resizeWindow: @escaping (Bool) -> Void) {
         _store = State(initialValue: store)
@@ -168,7 +177,8 @@ struct IslandView: View {
         .overlay(
             WindowDragBridge(
                 onClick: toggleExpanded,
-                onPressChanged: { togglePressed = $0 }
+                onPressChanged: { togglePressed = $0 },
+                onRightClick: switchCollapsedMode
             )
         )
     }
@@ -245,15 +255,22 @@ struct IslandView: View {
             }
         }
         .frame(width: 64, height: 64)
+        .rotation3DEffect(
+            .degrees(collapsedFlipAngle),
+            axis: (x: 0, y: 1, z: 0),
+            perspective: 0.72
+        )
     }
 
     private var collapsedAppHeader: some View {
-        ZStack(alignment: .bottomTrailing) {
-            AppIconView(image: featuredApp?.icon, size: 38)
-            statusDot(color: featuredPressureColor)
-        }
+        collapsedIconFrame(
+            icon: AppIconView(image: featuredApp?.icon, size: Metrics.collapsedIconSize),
+            modeSystemImage: "square.grid.2x2",
+            modeTint: .blue,
+            status: statusDot(color: featuredPressureColor)
+        )
         .externalHoverCard(
-            title: featuredApp?.name ?? "No open apps",
+            title: "App · \(featuredApp?.name ?? "No open apps")",
             detailLines: collapsedAppDetailLines,
             systemImage: "app.fill",
             image: featuredApp?.icon,
@@ -262,13 +279,14 @@ struct IslandView: View {
     }
 
     private var collapsedAgentHeader: some View {
-        ZStack(alignment: .bottomTrailing) {
-            AgentIcon(provider: agentStore.snapshot.provider, size: 38, fontSize: 8)
-
-            statusDot(color: agentStatusColor, isPulsing: agentStore.completionNotice != nil)
-        }
+        collapsedIconFrame(
+            icon: AgentIcon(provider: agentStore.snapshot.provider, size: Metrics.collapsedIconSize, fontSize: 8),
+            modeSystemImage: "terminal",
+            modeTint: .cyan,
+            status: statusDot(color: agentStatusColor, isPulsing: agentStore.completionNotice != nil)
+        )
         .externalHoverCard(
-            title: agentStore.snapshot.provider.displayName,
+            title: "Agent · \(agentStore.snapshot.provider.displayName)",
             subtitle: agentStore.snapshot.hookStatus.label,
             detailLines: collapsedAgentDetailLines,
             agentProvider: agentStore.snapshot.provider,
@@ -277,6 +295,40 @@ struct IslandView: View {
                 agentStore.setCompletionNoticeHovered(isHovering)
             }
         )
+    }
+
+    private func collapsedIconFrame<Icon: View, Status: View>(
+        icon: Icon,
+        modeSystemImage: String,
+        modeTint: Color,
+        status: Status
+    ) -> some View {
+        ZStack {
+            icon
+        }
+        .frame(width: Metrics.collapsedIconSize, height: Metrics.collapsedIconSize)
+        .overlay(alignment: .topLeading) {
+            modeBadge(systemImage: modeSystemImage, tint: modeTint)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            status
+        }
+    }
+
+    private func modeBadge(systemImage: String, tint: Color) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: Metrics.modeBadgeIconSize, weight: .bold))
+            .foregroundStyle(.white.opacity(0.88))
+            .frame(width: Metrics.modeBadgeSize, height: Metrics.modeBadgeSize)
+            .background {
+                Circle()
+                    .fill(tint.opacity(0.86))
+                    .overlay {
+                        Circle()
+                            .stroke(.black.opacity(0.78), lineWidth: 1.5)
+                    }
+            }
+            .offset(x: Metrics.modeBadgeOffset.width, y: Metrics.modeBadgeOffset.height)
     }
 
     private func statusDot(color: Color, isPulsing: Bool = false) -> some View {
@@ -437,6 +489,28 @@ struct IslandView: View {
         withAnimation(.easeInOut(duration: 0.16)) {
             monitorMode = mode
         }
+        refreshForMonitorMode(mode)
+    }
+
+    private func switchCollapsedMode() {
+        guard !expanded, collapsedFlipAngle == 0 else { return }
+
+        let nextMode: AgentMonitorMode = monitorMode == .apps ? .agent : .apps
+        withAnimation(.easeIn(duration: Metrics.flipFirstHalfDuration)) {
+            collapsedFlipAngle = Metrics.flipMidpointAngle
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(Metrics.flipFirstHalfMilliseconds))
+            monitorMode = nextMode
+            withAnimation(.easeOut(duration: Metrics.flipSecondHalfDuration)) {
+                collapsedFlipAngle = 0
+            }
+            refreshForMonitorMode(nextMode)
+        }
+    }
+
+    private func refreshForMonitorMode(_ mode: AgentMonitorMode) {
         if mode == .agent {
             agentStore.refreshHookStatus()
         } else {
