@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct IslandView: View {
@@ -21,6 +22,8 @@ struct IslandView: View {
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
     @State private var togglePressed = false
+    @State private var completionPulse = false
+    @State private var completionDismissTask: Task<Void, Never>?
 
     init(store: ProcessStore, agentStore: AgentStore, resizeWindow: @escaping (Bool) -> Void) {
         _store = State(initialValue: store)
@@ -95,6 +98,9 @@ struct IslandView: View {
             } message: {
                 Text(focusError ?? "")
             }
+            .onChange(of: agentStore.completionNotice?.id) { _, _ in
+                showCompletionNoticeIfNeeded()
+            }
     }
 
     private var visualContent: some View {
@@ -125,7 +131,8 @@ struct IslandView: View {
                     AgentMonitorView(
                         snapshot: agentStore.snapshot,
                         refresh: { agentStore.refreshHookStatus() },
-                        registerHook: { agentStore.registerCodexHook() }
+                        registerHook: { agentStore.registerCodexHook() },
+                        detachHook: { agentStore.detachCodexHook() }
                     )
                     .transition(.opacity)
                 }
@@ -253,7 +260,7 @@ struct IslandView: View {
         ZStack(alignment: .bottomTrailing) {
             AgentIcon(provider: agentStore.snapshot.provider, size: 38, fontSize: 8)
 
-            statusDot(color: agentStatusColor)
+            statusDot(color: agentStatusColor, isPulsing: completionPulse)
         }
         .externalHoverCard(
             title: agentStore.snapshot.provider.displayName,
@@ -264,10 +271,19 @@ struct IslandView: View {
         )
     }
 
-    private func statusDot(color: Color) -> some View {
+    private func statusDot(color: Color, isPulsing: Bool = false) -> some View {
         Circle()
             .fill(color)
             .frame(width: 9, height: 9)
+            .overlay {
+                if isPulsing {
+                    Circle()
+                        .stroke(color.opacity(0.72), lineWidth: 2)
+                        .scaleEffect(2.2)
+                        .opacity(0.58)
+                        .transition(.opacity.combined(with: .scale))
+                }
+            }
             .overlay {
                 Circle()
                     .stroke(.black.opacity(0.92), lineWidth: 2)
@@ -399,6 +415,7 @@ struct IslandView: View {
     }
 
     private func toggleExpanded() {
+        dismissCompletionNotice()
         let nextExpanded = !expanded
         resizeWindow(nextExpanded)
         withAnimation(Metrics.animation) {
@@ -407,6 +424,52 @@ struct IslandView: View {
         if nextExpanded {
             refreshAfterExpansion()
         }
+    }
+
+    private func showCompletionNoticeIfNeeded() {
+        guard let notice = agentStore.completionNotice else { return }
+        AgentCompletionToastController.show(notice, near: islandFrameOnScreen)
+
+        withAnimation(.easeOut(duration: 0.18)) {
+            completionPulse = true
+        }
+
+        completionDismissTask?.cancel()
+        completionDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1_100))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.20)) {
+                completionPulse = false
+            }
+
+            try? await Task.sleep(for: .milliseconds(2_900))
+            guard !Task.isCancelled else { return }
+            AgentCompletionToastController.hide()
+            agentStore.dismissCompletionNotice(id: notice.id)
+        }
+    }
+
+    private func dismissCompletionNotice() {
+        completionDismissTask?.cancel()
+        completionDismissTask = nil
+        completionPulse = false
+        AgentCompletionToastController.hide()
+        agentStore.dismissCompletionNotice()
+    }
+
+    private var islandFrameOnScreen: CGRect {
+        if let frame = NSApp.windows.first(where: { $0 is IslandWindow && $0.isVisible })?.frame {
+            return frame
+        }
+
+        let visibleFrame = NSScreen.main?.visibleFrame ?? .zero
+        let size = islandWindowSize
+        return CGRect(
+            x: visibleFrame.maxX - size.width - 22,
+            y: visibleFrame.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
     }
 
     private func setMonitorMode(_ mode: AgentMonitorMode) {

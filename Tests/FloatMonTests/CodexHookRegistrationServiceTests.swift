@@ -120,6 +120,56 @@ final class CodexHookRegistrationServiceTests: XCTestCase {
         XCTAssertEqual(output.components(separatedBy: "--floatmon-codex-hook Stop").count - 1, 1)
     }
 
+    func testDetachRemovesFloatMonHooksAndPreservesExistingHooks() throws {
+        let hooksURL = root.appendingPathComponent("hooks.json")
+        try """
+        {
+          "hooks": {
+            "Stop": [
+              {
+                "hooks": [
+                  {
+                    "command": "echo existing stop",
+                    "type": "command",
+                    "timeout": 5
+                  }
+                ]
+              },
+              {
+                "hooks": [
+                  {
+                    "command": "'/tmp/FloatMon' --floatmon-codex-hook Stop",
+                    "type": "command",
+                    "timeout": 5
+                  }
+                ]
+              }
+            ],
+            "SubagentStart": [
+              {
+                "hooks": [
+                  {
+                    "command": "'/tmp/FloatMon' --floatmon-codex-hook SubagentStart",
+                    "type": "command",
+                    "timeout": 5
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        """.write(to: hooksURL, atomically: true, encoding: .utf8)
+        let service = CodexHookRegistrationService(paths: CodexPaths(codexHome: root))
+
+        let result = try service.detach()
+
+        XCTAssertTrue(result.backupURL.lastPathComponent.hasPrefix("hooks.floatmon-unregister-backup."))
+        let output = try String(contentsOf: hooksURL, encoding: .utf8)
+        XCTAssertTrue(output.contains("echo existing stop"))
+        XCTAssertFalse(output.contains("--floatmon-codex-hook"))
+        XCTAssertFalse(output.contains("SubagentStart"))
+    }
+
     func testIsRegisteredMatchesEscapedExecutablePath() throws {
         let hooksURL = root.appendingPathComponent("hooks.json")
         try #"{"hooks":{}}"#.write(to: hooksURL, atomically: true, encoding: .utf8)

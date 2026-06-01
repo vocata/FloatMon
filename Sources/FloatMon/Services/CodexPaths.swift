@@ -65,6 +65,14 @@ struct CodexPaths {
         return codexHome.appendingPathComponent("hooks.floatmon-backup.\(stamp).json")
     }
 
+    func unregisterBackupHooksURL(now: Date = Date()) -> URL {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let stamp = formatter.string(from: now)
+            .replacingOccurrences(of: ":", with: "-")
+        return codexHome.appendingPathComponent("hooks.floatmon-unregister-backup.\(stamp).json")
+    }
+
     private static func eventFileName(threadID: String?) -> String {
         let rawName = threadID?
             .trimmingCharacters(in: .whitespacesAndNewlines)

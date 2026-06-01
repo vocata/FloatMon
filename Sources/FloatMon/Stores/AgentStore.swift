@@ -5,6 +5,7 @@ import Observation
 @MainActor
 final class AgentStore {
     var snapshot = AgentSnapshot.empty
+    var completionNotice: AgentCompletionNotice?
 
     private let paths: CodexPaths
     private let reader: CodexSnapshotReader
@@ -14,6 +15,7 @@ final class AgentStore {
     private var isRefreshing = false
     private var refreshTask: Task<Void, Never>?
     private var timer: Timer?
+    private var completionNotifier = AgentCompletionNotifier()
 
     init(
         paths: CodexPaths = CodexPaths(),
@@ -56,8 +58,16 @@ final class AgentStore {
 
             guard let self, !Task.isCancelled else { return }
             self.snapshot = snapshot
+            if let notice = completionNotifier.notice(for: snapshot) {
+                completionNotice = notice
+            }
             self.isRefreshing = false
         }
+    }
+
+    func dismissCompletionNotice(id: String? = nil) {
+        guard id == nil || completionNotice?.id == id else { return }
+        completionNotice = nil
     }
 
     func refreshHookStatus() {
@@ -82,5 +92,15 @@ final class AgentStore {
             hookStatus = .failed(error.localizedDescription)
         }
         refresh()
+    }
+
+    func detachCodexHook() {
+        do {
+            _ = try registrationService.detach()
+            hookStatus = .missing
+        } catch {
+            hookStatus = .failed(error.localizedDescription)
+        }
+        refresh(force: true)
     }
 }

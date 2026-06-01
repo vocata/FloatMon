@@ -17,8 +17,10 @@ struct AgentMonitorView: View {
     let snapshot: AgentSnapshot
     let refresh: () -> Void
     let registerHook: () -> Void
+    let detachHook: () -> Void
 
     @State private var isConfirmingHookRegistration = false
+    @State private var isConfirmingHookDetach = false
     @State private var selectedEvent: AgentEvent?
     @State private var isShowingUsageStats = false
 
@@ -45,6 +47,7 @@ struct AgentMonitorView: View {
                 isConfirmingHookRegistration = false
             } else {
                 isShowingUsageStats = false
+                isConfirmingHookDetach = false
             }
         }
         .onDisappear {
@@ -73,6 +76,7 @@ struct AgentMonitorView: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isShowingUsageStats.toggle()
+                        isConfirmingHookDetach = false
                     }
                     closeDetails()
                 } label: {
@@ -88,6 +92,26 @@ struct AgentMonitorView: View {
                 }
                 .buttonStyle(.plain)
                 .hoverTooltip(isShowingUsageStats ? "Activity" : "Usage")
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isConfirmingHookDetach = true
+                        isShowingUsageStats = false
+                    }
+                    closeDetails()
+                } label: {
+                    Image(systemName: "nosign")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .frame(width: 24, height: 24)
+                        .background {
+                            Circle()
+                                .fill(.white.opacity(0.08))
+                        }
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .hoverTooltip("Detach Hook")
             }
 
             Button(action: refresh) {
@@ -108,7 +132,10 @@ struct AgentMonitorView: View {
 
     private var registeredContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if isShowingUsageStats {
+            if isConfirmingHookDetach {
+                hookDetachConfirmationPanel
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if isShowingUsageStats {
                 UsageStatsView(summary: snapshot.usageSummary)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
@@ -117,6 +144,7 @@ struct AgentMonitorView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: isShowingUsageStats)
+        .animation(.easeInOut(duration: 0.18), value: isConfirmingHookDetach)
     }
 
     private var activityContent: some View {
@@ -225,6 +253,43 @@ struct AgentMonitorView: View {
                         .stroke(.white.opacity(0.07), lineWidth: 1)
                 }
         }
+    }
+
+    private var hookDetachConfirmationPanel: some View {
+        VStack(spacing: 10) {
+            Spacer(minLength: 16)
+
+            AgentIcon(provider: snapshot.provider, size: 38, fontSize: 12)
+
+            VStack(spacing: 4) {
+                Text("Detach Codex Hook?")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(1)
+
+                Text("FloatMon will remove only its Codex hooks from ~/.codex/hooks.json and create a backup first.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.54))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .frame(maxWidth: 360)
+            }
+
+            HStack(spacing: 8) {
+                Button("Cancel") {
+                    isConfirmingHookDetach = false
+                }
+                .buttonStyle(HookConfirmationButtonStyle(isPrimary: false))
+
+                Button("Detach") {
+                    detachHook()
+                }
+                .buttonStyle(HookConfirmationButtonStyle(isPrimary: true))
+            }
+
+            Spacer(minLength: 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var registrationTitle: String {

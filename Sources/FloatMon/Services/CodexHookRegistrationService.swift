@@ -49,7 +49,7 @@ struct CodexHookRegistrationService {
             try #"{"hooks":{}}"#.write(to: paths.hooksJSON, atomically: true, encoding: .utf8)
         }
 
-        let backupURL = uniqueBackupHooksURL()
+        let backupURL = uniqueBackupHooksURL(kind: .register)
         try fileManager.copyItem(at: paths.hooksJSON, to: backupURL)
 
         var root = try loadRoot()
@@ -64,14 +64,41 @@ struct CodexHookRegistrationService {
         return CodexHookRegistrationResult(backupURL: backupURL)
     }
 
+    func detach() throws -> CodexHookRegistrationResult {
+        try fileManager.createDirectory(at: paths.codexHome, withIntermediateDirectories: true)
+        if !fileManager.fileExists(atPath: paths.hooksJSON.path) {
+            try #"{"hooks":{}}"#.write(to: paths.hooksJSON, atomically: true, encoding: .utf8)
+        }
+
+        let backupURL = uniqueBackupHooksURL(kind: .unregister)
+        try fileManager.copyItem(at: paths.hooksJSON, to: backupURL)
+
+        var root = try loadRoot()
+        var hooks = root["hooks"] as? [String: Any] ?? [:]
+        for event in Self.events {
+            removeFloatMonHooks(event: event, from: &hooks)
+        }
+        root["hooks"] = hooks
+
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: paths.hooksJSON, options: .atomic)
+        return CodexHookRegistrationResult(backupURL: backupURL)
+    }
+
     private func loadRoot() throws -> [String: Any] {
         let data = try Data(contentsOf: paths.hooksJSON)
         let object = try JSONSerialization.jsonObject(with: data)
         return object as? [String: Any] ?? ["hooks": [String: Any]()]
     }
 
-    private func uniqueBackupHooksURL() -> URL {
-        let backupURL = paths.backupHooksURL(now: now())
+    private func uniqueBackupHooksURL(kind: BackupKind) -> URL {
+        let backupURL: URL
+        switch kind {
+        case .register:
+            backupURL = paths.backupHooksURL(now: now())
+        case .unregister:
+            backupURL = paths.unregisterBackupHooksURL(now: now())
+        }
         guard fileManager.fileExists(atPath: backupURL.path) else {
             return backupURL
         }
@@ -90,6 +117,11 @@ struct CodexHookRegistrationService {
             }
             index += 1
         }
+    }
+
+    private enum BackupKind {
+        case register
+        case unregister
     }
 
     private func eventHookCommands(for event: String, in hooks: [String: Any]) -> [String] {
@@ -143,6 +175,37 @@ struct CodexHookRegistrationService {
             ]
         ])
         hooks[event] = entries
+    }
+
+    private func removeFloatMonHooks(event: String, from hooks: inout [String: Any]) {
+        guard var entries = hooks[event] as? [[String: Any]] else { return }
+
+        entries = entries.compactMap { entry in
+            guard let hookList = entry["hooks"] as? [[String: Any]] else {
+                return entry
+            }
+
+            let retainedHooks = hookList.filter { hook in
+                guard let command = hook["command"] as? String else {
+                    return true
+                }
+                return !Self.isFloatMonHookCommand(command, event: event)
+            }
+
+            guard !retainedHooks.isEmpty else {
+                return nil
+            }
+
+            var retainedEntry = entry
+            retainedEntry["hooks"] = retainedHooks
+            return retainedEntry
+        }
+
+        if entries.isEmpty {
+            hooks.removeValue(forKey: event)
+        } else {
+            hooks[event] = entries
+        }
     }
 
     static func command(executablePath: String, event: String) -> String {

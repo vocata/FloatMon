@@ -187,7 +187,7 @@ private final class ExternalTooltipPanel {
     static let shared = ExternalTooltipPanel()
 
     private var panel: NSPanel?
-    private var hostingView: NSHostingView<TooltipContent>?
+    private var hostingView: TransparentTooltipHostingView<TooltipContent>?
     private var nextHoverID = 0
     private var activeHoverID: Int?
     private var currentHoverIDs: Set<Int> = []
@@ -218,7 +218,7 @@ private final class ExternalTooltipPanel {
         }
 
         let content = TooltipContent(payload: payload)
-        let hostingView = hostingView ?? NSHostingView(rootView: content)
+        let hostingView = hostingView ?? TransparentTooltipHostingView(rootView: content)
         hostingView.rootView = content
         hostingView.frame = NSRect(origin: .zero, size: hostingView.fittingSize)
         self.hostingView = hostingView
@@ -304,6 +304,30 @@ private final class ExternalTooltipPanel {
         }
 
         return NSRect(origin: origin, size: size)
+    }
+}
+
+private final class TransparentTooltipHostingView<Content: View>: NSHostingView<Content> {
+    override var isOpaque: Bool {
+        false
+    }
+
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 
