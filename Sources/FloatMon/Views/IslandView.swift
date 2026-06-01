@@ -15,6 +15,7 @@ struct IslandView: View {
         static let modeBadgeSize: CGFloat = 16
         static let modeBadgeIconSize: CGFloat = 8
         static let modeBadgeOffset = CGSize(width: -3, height: -3)
+        static let sortSlideAnimation = Animation.spring(response: 0.28, dampingFraction: 0.86)
         static let refreshDelayMilliseconds = 280
         static let postCloseRefreshDelayMilliseconds = 350
     }
@@ -30,6 +31,7 @@ struct IslandView: View {
     @State private var focusError: String?
     @State private var togglePressed = false
     @State private var collapsedFlipAngle: Double = 0
+    @State private var appSortSlideDirection: WindowSwipeDirection = .left
 
     init(store: ProcessStore, agentStore: AgentStore, resizeWindow: @escaping (Bool) -> Void) {
         _store = State(initialValue: store)
@@ -178,7 +180,8 @@ struct IslandView: View {
             WindowDragBridge(
                 onClick: toggleExpanded,
                 onPressChanged: { togglePressed = $0 },
-                onRightClick: switchCollapsedMode
+                onRightClick: switchCollapsedMode,
+                onHorizontalSwipe: switchCollapsedAppSortMode
             )
         )
     }
@@ -264,7 +267,7 @@ struct IslandView: View {
 
     private var collapsedAppHeader: some View {
         collapsedIconFrame(
-            icon: AppIconView(image: featuredApp?.icon, size: Metrics.collapsedIconSize),
+            icon: collapsedAppIcon,
             modeSystemImage: "square.grid.2x2",
             modeTint: .blue,
             status: statusDot(color: featuredPressureColor)
@@ -276,6 +279,30 @@ struct IslandView: View {
             image: featuredApp?.icon,
             tone: featuredPressureTone
         )
+    }
+
+    private var collapsedAppIcon: some View {
+        ZStack {
+            AppIconView(image: featuredApp?.icon, size: Metrics.collapsedIconSize)
+                .id(sortMode)
+                .transition(sortModeTransition)
+        }
+        .animation(Metrics.sortSlideAnimation, value: sortMode)
+    }
+
+    private var sortModeTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: sortModeInsertionEdge).combined(with: .opacity),
+            removal: .move(edge: sortModeRemovalEdge).combined(with: .opacity)
+        )
+    }
+
+    private var sortModeInsertionEdge: Edge {
+        appSortSlideDirection == .left ? .trailing : .leading
+    }
+
+    private var sortModeRemovalEdge: Edge {
+        appSortSlideDirection == .left ? .leading : .trailing
     }
 
     private var collapsedAgentHeader: some View {
@@ -507,6 +534,18 @@ struct IslandView: View {
                 collapsedFlipAngle = 0
             }
             refreshForMonitorMode(nextMode)
+        }
+    }
+
+    private func switchCollapsedAppSortMode(_ direction: WindowSwipeDirection) {
+        guard !expanded, monitorMode == .apps else { return }
+
+        let targetMode: ProcessSortMode = direction == .left ? .cpu : .memory
+        guard sortMode != targetMode else { return }
+
+        appSortSlideDirection = direction
+        withAnimation(Metrics.sortSlideAnimation) {
+            sortMode = targetMode
         }
     }
 

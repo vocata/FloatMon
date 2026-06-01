@@ -11,10 +11,16 @@ enum WindowClickPolicy {
     }
 }
 
+enum WindowSwipeDirection {
+    case left
+    case right
+}
+
 struct WindowDragBridge: NSViewRepresentable {
     let onClick: () -> Void
     var onPressChanged: (Bool) -> Void = { _ in }
     var onRightClick: (() -> Void)?
+    var onHorizontalSwipe: ((WindowSwipeDirection) -> Void)?
 
     func makeNSView(context: Context) -> DragView {
         DragView(coordinator: context.coordinator)
@@ -24,13 +30,15 @@ struct WindowDragBridge: NSViewRepresentable {
         context.coordinator.onClick = onClick
         context.coordinator.onPressChanged = onPressChanged
         context.coordinator.onRightClick = onRightClick
+        context.coordinator.onHorizontalSwipe = onHorizontalSwipe
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onClick: onClick,
             onPressChanged: onPressChanged,
-            onRightClick: onRightClick
+            onRightClick: onRightClick,
+            onHorizontalSwipe: onHorizontalSwipe
         )
     }
 
@@ -38,26 +46,38 @@ struct WindowDragBridge: NSViewRepresentable {
         var onClick: () -> Void
         var onPressChanged: (Bool) -> Void
         var onRightClick: (() -> Void)?
+        var onHorizontalSwipe: ((WindowSwipeDirection) -> Void)?
 
         init(
             onClick: @escaping () -> Void,
             onPressChanged: @escaping (Bool) -> Void,
-            onRightClick: (() -> Void)?
+            onRightClick: (() -> Void)?,
+            onHorizontalSwipe: ((WindowSwipeDirection) -> Void)?
         ) {
             self.onClick = onClick
             self.onPressChanged = onPressChanged
             self.onRightClick = onRightClick
+            self.onHorizontalSwipe = onHorizontalSwipe
         }
     }
 }
 
 final class DragView: NSView {
+    private enum Metrics {
+        static let swipeThreshold: CGFloat = 18
+        static let horizontalDominanceRatio: CGFloat = 1.25
+        static let phaseLessSwipeCooldown: TimeInterval = 0.35
+    }
+
     private let coordinator: WindowDragBridge.Coordinator
     private let dragThreshold: CGFloat = 4
     private var startMouse: NSPoint?
     private var startOrigin: NSPoint?
     private var didDrag = false
     private var pressToken = 0
+    private var accumulatedHorizontalScroll: CGFloat = 0
+    private var lastSwipeTimestamp: TimeInterval = 0
+    private var didTriggerHorizontalSwipe = false
 
     init(coordinator: WindowDragBridge.Coordinator) {
         self.coordinator = coordinator
@@ -164,6 +184,60 @@ final class DragView: NSView {
         onRightClick()
     }
 
+    override func scrollWheel(with event: NSEvent) {
+        guard let onHorizontalSwipe = coordinator.onHorizontalSwipe else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let phase = event.phase
+        if phase.contains(.began) || phase.contains(.mayBegin) {
+            resetHorizontalSwipeTracking()
+        }
+        if phase.contains(.ended) || phase.contains(.cancelled) {
+            resetHorizontalSwipeTracking()
+            return
+        }
+
+        let momentumPhase = event.momentumPhase
+        if !momentumPhase.isEmpty {
+            if momentumPhase.contains(.ended) || momentumPhase.contains(.cancelled) {
+                resetHorizontalSwipeTracking()
+            }
+            return
+        }
+
+        let deltaX = event.scrollingDeltaX
+        let deltaY = event.scrollingDeltaY
+        guard abs(deltaX) > abs(deltaY) * Metrics.horizontalDominanceRatio else {
+            resetHorizontalSwipeTracking()
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let hasGesturePhase = !phase.isEmpty
+        guard !hasGesturePhase || !didTriggerHorizontalSwipe else { return }
+
+        accumulatedHorizontalScroll += deltaX
+        guard abs(accumulatedHorizontalScroll) >= Metrics.swipeThreshold else { return }
+
+        let timestamp = event.timestamp
+        guard hasGesturePhase || timestamp - lastSwipeTimestamp >= Metrics.phaseLessSwipeCooldown else {
+            accumulatedHorizontalScroll = 0
+            return
+        }
+
+        let direction: WindowSwipeDirection = accumulatedHorizontalScroll < 0 ? .left : .right
+        accumulatedHorizontalScroll = 0
+        lastSwipeTimestamp = timestamp
+        didTriggerHorizontalSwipe = hasGesturePhase
+
+        Task { @MainActor in
+            ExternalHoverTooltipController.dismissActiveHover()
+        }
+        onHorizontalSwipe(direction)
+    }
+
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
             clearTracking()
@@ -179,6 +253,11 @@ final class DragView: NSView {
         startMouse = nil
         startOrigin = nil
         didDrag = false
+    }
+
+    private func resetHorizontalSwipeTracking() {
+        accumulatedHorizontalScroll = 0
+        didTriggerHorizontalSwipe = false
     }
 
     private func setPressed(_ pressed: Bool) {
