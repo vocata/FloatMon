@@ -4,6 +4,10 @@ import SwiftUI
 enum WindowSwipeDirection {
     case left
     case right
+
+    static func accumulatedScrollDirection(_ value: CGFloat) -> WindowSwipeDirection {
+        value < 0 ? .left : .right
+    }
 }
 
 struct WindowDragBridge: NSViewRepresentable {
@@ -214,7 +218,7 @@ final class DragView: NSView {
             return
         }
 
-        let direction: WindowSwipeDirection = accumulatedHorizontalScroll < 0 ? .left : .right
+        let direction = WindowSwipeDirection.accumulatedScrollDirection(accumulatedHorizontalScroll)
         accumulatedHorizontalScroll = 0
         lastSwipeTimestamp = timestamp
         didTriggerHorizontalSwipe = hasGesturePhase

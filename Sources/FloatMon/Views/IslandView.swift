@@ -530,7 +530,7 @@ struct IslandView: View {
     private func switchCollapsedAppSortMode(_ direction: WindowSwipeDirection) {
         guard !expanded, monitorMode == .apps else { return }
 
-        let targetMode: ProcessSortMode = direction == .left ? .cpu : .memory
+        let targetMode = CollapsedAppSortMode.target(for: direction)
         guard sortMode != targetMode else { return }
         guard !isAppSortSliding else { return }
 
