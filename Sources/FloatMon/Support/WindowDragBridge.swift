@@ -232,9 +232,6 @@ final class DragView: NSView {
         lastSwipeTimestamp = timestamp
         didTriggerHorizontalSwipe = hasGesturePhase
 
-        Task { @MainActor in
-            ExternalHoverTooltipController.dismissActiveHover()
-        }
         onHorizontalSwipe(direction)
     }
 

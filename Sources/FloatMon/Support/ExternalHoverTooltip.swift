@@ -51,6 +51,11 @@ enum ExternalHoverTooltipController {
     }
 
     @MainActor
+    static func hideTransiently() {
+        ExternalTooltipPanel.shared.hide()
+    }
+
+    @MainActor
     static func dismissActiveHover() {
         ExternalTooltipPanel.shared.dismissActiveHover()
     }
@@ -125,12 +130,16 @@ private struct ExternalTooltipTrackingView: NSViewRepresentable {
     func updateNSView(_ nsView: TooltipTrackingNSView, context: Context) {
         nsView.payload = payload
     }
+
+    static func dismantleNSView(_ nsView: TooltipTrackingNSView, coordinator: ()) {
+        nsView.stopTracking()
+    }
 }
 
 private final class TooltipTrackingNSView: NSView {
     var payload: ExternalHoverTooltipPayload {
         didSet {
-            if isHovering {
+            if isHovering, !isTrackingStopped {
                 ExternalTooltipPanel.shared.show(payload: payload, near: screenRect(), hoverID: hoverID)
             }
         }
@@ -139,6 +148,7 @@ private final class TooltipTrackingNSView: NSView {
     private var isHovering = false
     private var hoverID: Int?
     private var hoverSyncScheduled = false
+    private var isTrackingStopped = false
 
     init(payload: ExternalHoverTooltipPayload) {
         self.payload = payload
@@ -153,6 +163,7 @@ private final class TooltipTrackingNSView: NSView {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
+        guard !isTrackingStopped else { return }
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(
             NSTrackingArea(
@@ -167,20 +178,29 @@ private final class TooltipTrackingNSView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        guard !isTrackingStopped else { return }
         scheduleHoverSync()
     }
 
     override func mouseEntered(with event: NSEvent) {
+        guard !isTrackingStopped else { return }
         setHovering(true)
     }
 
     override func mouseExited(with event: NSEvent) {
+        guard !isTrackingStopped else { return }
         setHovering(false)
     }
 
     override func mouseDown(with event: NSEvent) {
         ExternalTooltipPanel.shared.dismissActiveHover()
         super.mouseDown(with: event)
+    }
+
+    func stopTracking() {
+        isTrackingStopped = true
+        trackingAreas.forEach(removeTrackingArea)
+        setHovering(false)
     }
 
     private func screenRect() -> NSRect {
@@ -190,17 +210,18 @@ private final class TooltipTrackingNSView: NSView {
     }
 
     private func scheduleHoverSync() {
-        guard !hoverSyncScheduled else { return }
+        guard !isTrackingStopped, !hoverSyncScheduled else { return }
         hoverSyncScheduled = true
 
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, !isTrackingStopped else { return }
             hoverSyncScheduled = false
             syncHoverStateWithCurrentMouse()
         }
     }
 
     private func syncHoverStateWithCurrentMouse() {
+        guard !isTrackingStopped else { return }
         guard let window else { return }
 
         let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)

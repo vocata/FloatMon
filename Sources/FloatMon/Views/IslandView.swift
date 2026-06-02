@@ -535,6 +535,8 @@ struct IslandView: View {
         guard !isAppSortSliding else { return }
 
         isAppSortSliding = true
+        isCollapsedHoverSuppressed = true
+        ExternalHoverTooltipController.hideTransiently()
         let outgoingOffset = direction == .left ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel
         let incomingOffset = -outgoingOffset
 
@@ -555,6 +557,7 @@ struct IslandView: View {
 
             try? await Task.sleep(for: .milliseconds(Int(Metrics.sortSlideInDuration * 1000)))
             isAppSortSliding = false
+            isCollapsedHoverSuppressed = false
         }
     }
 
