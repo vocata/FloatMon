@@ -1,16 +1,6 @@
 import AppKit
 import SwiftUI
 
-enum WindowClickResolution: Equatable {
-    case performClickImmediately
-}
-
-enum WindowClickPolicy {
-    static func resolution(clickCount: Int) -> WindowClickResolution {
-        .performClickImmediately
-    }
-}
-
 enum WindowSwipeDirection {
     case left
     case right
@@ -158,10 +148,7 @@ final class DragView: NSView {
         clearTracking()
 
         if shouldClick {
-            switch WindowClickPolicy.resolution(clickCount: event.clickCount) {
-            case .performClickImmediately:
-                coordinator.onClick()
-            }
+            coordinator.onClick()
             releasePressAfterClick()
         } else {
             setPressed(false)

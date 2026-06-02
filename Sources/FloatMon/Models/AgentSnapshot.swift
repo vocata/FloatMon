@@ -52,7 +52,6 @@ enum AgentHookStatus: Equatable {
     case unknown
     case missing
     case registered
-    case declined
     case failed(String)
 
     var label: String {
@@ -63,8 +62,6 @@ enum AgentHookStatus: Equatable {
             return "Hook not registered"
         case .registered:
             return "Hook active"
-        case .declined:
-            return "Hook skipped"
         case .failed:
             return "Hook error"
         }

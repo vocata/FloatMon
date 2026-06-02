@@ -67,7 +67,7 @@ final class AgentStore {
     func setCompletionNoticeHovered(_ isHovered: Bool) {
         isCompletionNoticeHovered = isHovered
         if isHovered {
-            clearCompletionNotice(reason: .agentHover)
+            clearCompletionNotice()
         }
     }
 
@@ -78,11 +78,6 @@ final class AgentStore {
             hookStatus = .missing
         }
         refresh(force: true)
-    }
-
-    func declineHookRegistration() {
-        hookStatus = .declined
-        refresh()
     }
 
     func registerCodexHook() {
@@ -108,7 +103,7 @@ final class AgentStore {
     private func updateCompletionNotice(for snapshot: AgentSnapshot) {
         if let notice = completionNotifier.notice(for: snapshot) {
             if isCompletionNoticeHovered {
-                clearCompletionNotice(reason: .agentHover)
+                clearCompletionNotice()
             } else {
                 completionNotice = notice
             }
@@ -116,16 +111,11 @@ final class AgentStore {
         }
 
         if let completionNotice, completionNotifier.shouldDismiss(completionNotice, for: snapshot) {
-            clearCompletionNotice(reason: .newerEvent)
+            clearCompletionNotice()
         }
     }
 
-    private func clearCompletionNotice(reason _: CompletionNoticeClearReason) {
+    private func clearCompletionNotice() {
         completionNotice = nil
     }
-}
-
-private enum CompletionNoticeClearReason {
-    case agentHover
-    case newerEvent
 }

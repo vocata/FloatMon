@@ -298,8 +298,6 @@ struct AgentMonitorView: View {
             return "Checking Codex Hook"
         case .failed:
             return "Hook Registration Failed"
-        case .declined:
-            return "Codex Hook Skipped"
         case .missing:
             return "Codex Hook Required"
         case .registered:
@@ -313,7 +311,7 @@ struct AgentMonitorView: View {
             return "Checking whether live Codex monitoring is available."
         case .failed(let message):
             return message
-        case .declined, .missing:
+        case .missing:
             return "Register the hook to show live agent activity, tool calls, messages, tokens, and task context."
         case .registered:
             return "Live Codex monitoring is active."

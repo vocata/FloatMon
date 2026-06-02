@@ -46,11 +46,6 @@ struct ExternalHoverTooltipPayload {
 
 enum ExternalHoverTooltipController {
     @MainActor
-    static func hide() {
-        ExternalTooltipPanel.shared.dismissActiveHover()
-    }
-
-    @MainActor
     static func hideTransiently() {
         ExternalTooltipPanel.shared.hide()
     }
@@ -87,10 +82,6 @@ struct ExternalHoverTooltipModifier: ViewModifier {
 }
 
 extension View {
-    func externalHoverTooltip(_ text: String) -> some View {
-        externalHoverCard(title: text)
-    }
-
     func externalHoverCard(
         title: String,
         subtitle: String? = nil,
