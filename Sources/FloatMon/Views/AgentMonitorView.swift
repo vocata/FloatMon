@@ -541,27 +541,35 @@ private struct UsageBar: View {
 
     var body: some View {
         let labelHeight: CGFloat = 18
+        let barShape = Capsule(style: .continuous)
         let ratio = peakTokens > 0 ? CGFloat(bucket.tokensUsed) / CGFloat(peakTokens) : 0
-        let barHeight = max(chartHeight * ratio, 2)
+        let rawBarHeight = chartHeight * min(max(ratio, 0), 1)
+        let minimumNonZeroBarHeight = min(CGFloat(14), chartHeight)
+        let barHeight = max(rawBarHeight, minimumNonZeroBarHeight)
 
         VStack(spacing: 5) {
             ZStack(alignment: .bottom) {
-                Capsule(style: .continuous)
+                barShape
                     .fill(.white.opacity(0.07))
 
                 if bucket.tokensUsed > 0 {
-                    Capsule(style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color(red: 0.00, green: 0.78, blue: 0.82),
-                                    Color(red: 0.25, green: 0.92, blue: 0.42)
-                                ],
-                                startPoint: .bottom,
-                                endPoint: .top
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0.00, green: 0.78, blue: 0.82),
+                                        Color(red: 0.25, green: 0.92, blue: 0.42)
+                                    ],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
                             )
-                        )
-                        .frame(height: barHeight)
+                            .frame(height: barHeight)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipShape(barShape)
                 }
             }
             .frame(maxWidth: .infinity)
