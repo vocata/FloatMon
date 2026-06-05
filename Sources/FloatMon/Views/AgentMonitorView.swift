@@ -16,6 +16,7 @@ struct AgentMonitorView: View {
 
     let snapshot: AgentSnapshot
     let refresh: () -> Void
+    let selectProvider: (AgentProvider) -> Void
     let registerHook: () -> Void
     let detachHook: () -> Void
 
@@ -31,6 +32,7 @@ struct AgentMonitorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
+            providerSelector
 
             if snapshot.hookStatus == .registered {
                 registeredContent
@@ -64,7 +66,7 @@ struct AgentMonitorView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .lineLimit(1)
 
-                Text(snapshot.hookStatus.label)
+                Text(integrationStatusLabel)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.55))
                     .lineLimit(1)
@@ -130,13 +132,53 @@ struct AgentMonitorView: View {
         }
     }
 
+    private var providerSelector: some View {
+        HStack(spacing: 6) {
+            ForEach(AgentProvider.allCases) { provider in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isShowingUsageStats = false
+                        isConfirmingHookDetach = false
+                        isConfirmingHookRegistration = false
+                        closeDetails()
+                        selectProvider(provider)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        AgentIcon(provider: provider, size: 20, fontSize: 7)
+
+                        Text(provider.displayName)
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(provider == snapshot.provider ? .white.opacity(0.92) : .white.opacity(0.58))
+                    .padding(.leading, 5)
+                    .padding(.trailing, 8)
+                    .frame(height: 28)
+                    .background {
+                        Capsule(style: .continuous)
+                            .fill(.white.opacity(provider == snapshot.provider ? 0.13 : 0.06))
+                            .overlay {
+                                Capsule(style: .continuous)
+                                    .stroke(.white.opacity(provider == snapshot.provider ? 0.12 : 0.04), lineWidth: 1)
+                            }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+
     private var registeredContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             if isConfirmingHookDetach {
                 hookDetachConfirmationPanel
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if isShowingUsageStats {
-                UsageStatsView(summary: snapshot.usageSummary)
+                UsageStatsView(summary: snapshot.usageSummary, unavailableReason: snapshot.unavailableReason)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else {
                 activityContent
@@ -165,11 +207,13 @@ struct AgentMonitorView: View {
                     value: tokensLabel,
                     systemImage: "number"
                 )
-                InfoRow(
-                    title: "Goal",
-                    value: goalLabel,
-                    systemImage: "target"
-                )
+                if snapshot.provider.supportsGoalDisplay {
+                    InfoRow(
+                        title: "Goal",
+                        value: goalLabel,
+                        systemImage: "target"
+                    )
+                }
             }
 
             eventsSection
@@ -202,7 +246,7 @@ struct AgentMonitorView: View {
                 Button {
                     isConfirmingHookRegistration = true
                 } label: {
-                    Label("Register Hook", systemImage: "plus.circle")
+                    Label(snapshot.provider.registerActionTitle, systemImage: "plus.circle")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.88))
                         .padding(.horizontal, 14)
@@ -224,7 +268,7 @@ struct AgentMonitorView: View {
 
     private var hookConfirmationPanel: some View {
         VStack(spacing: 8) {
-            Text("FloatMon will update ~/.codex/hooks.json and create a backup first.")
+            Text(registrationConfirmationMessage)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.62))
                 .multilineTextAlignment(.center)
@@ -262,12 +306,12 @@ struct AgentMonitorView: View {
             AgentIcon(provider: snapshot.provider, size: 38, fontSize: 12)
 
             VStack(spacing: 4) {
-                Text("Detach Codex Hook?")
+                Text("Detach \(snapshot.provider.displayName) \(snapshot.provider.integrationName)?")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.88))
                     .lineLimit(1)
 
-                Text("FloatMon will remove only its Codex hooks from ~/.codex/hooks.json and create a backup first.")
+                Text(detachConfirmationMessage)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.54))
                     .multilineTextAlignment(.center)
@@ -295,27 +339,48 @@ struct AgentMonitorView: View {
     private var registrationTitle: String {
         switch snapshot.hookStatus {
         case .unknown:
-            return "Checking Codex Hook"
+            return "Checking \(snapshot.provider.displayName) \(snapshot.provider.integrationName)"
         case .failed:
-            return "Hook Registration Failed"
+            return "\(snapshot.provider.integrationName) Registration Failed"
         case .missing:
-            return "Codex Hook Required"
+            return "\(snapshot.provider.displayName) \(snapshot.provider.integrationName) Required"
         case .registered:
-            return "Codex Hook Active"
+            return "\(snapshot.provider.displayName) \(snapshot.provider.integrationName) Active"
+        }
+    }
+
+    private var integrationStatusLabel: String {
+        switch snapshot.hookStatus {
+        case .unknown:
+            return "Checking \(snapshot.provider.integrationName.lowercased())"
+        case .missing:
+            return "\(snapshot.provider.integrationName) not registered"
+        case .registered:
+            return "\(snapshot.provider.integrationName) active"
+        case .failed:
+            return "\(snapshot.provider.integrationName) error"
         }
     }
 
     private var registrationMessage: String {
         switch snapshot.hookStatus {
         case .unknown:
-            return "Checking whether live Codex monitoring is available."
+            return "Checking whether live \(snapshot.provider.displayName) monitoring is available."
         case .failed(let message):
             return message
         case .missing:
-            return "Register the hook to show live agent activity, tool calls, messages, tokens, and task context."
+            return "Register the \(snapshot.provider.integrationName.lowercased()) to show live agent activity, tool calls, messages, tokens, and task context."
         case .registered:
-            return "Live Codex monitoring is active."
+            return "Live \(snapshot.provider.displayName) monitoring is active."
         }
+    }
+
+    private var registrationConfirmationMessage: String {
+        snapshot.provider.registrationConfirmationMessage
+    }
+
+    private var detachConfirmationMessage: String {
+        snapshot.provider.detachConfirmationMessage
     }
 
     private var eventsSection: some View {
@@ -406,6 +471,7 @@ struct AgentMonitorView: View {
 
 private struct UsageStatsView: View {
     let summary: AgentUsageSummary?
+    let unavailableReason: String?
     private static let availableHeight: CGFloat = 284
 
     var body: some View {
@@ -438,7 +504,7 @@ private struct UsageStatsView: View {
                     .frame(maxWidth: .infinity, minHeight: 28)
                 }
             } else {
-                Text("Codex sqlite state is unavailable")
+                Text(unavailableReason ?? "Usage data is unavailable")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white.opacity(0.44))
                     .frame(maxWidth: .infinity, minHeight: 176, alignment: .center)
@@ -763,7 +829,7 @@ private struct EventRow: View {
     var body: some View {
         HStack(spacing: 9) {
             Circle()
-                .fill(event.type.eventColor)
+                .fill(event.activitySignal.color)
                 .frame(width: 7, height: 7)
 
             Text(event.type)
@@ -833,7 +899,7 @@ private struct EventDetailPopover: View {
             HStack(spacing: 8) {
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(event.type.eventColor)
+                        .fill(event.activitySignal.color)
                         .frame(width: 7, height: 7)
 
                     Text(event.type)
@@ -1009,15 +1075,6 @@ struct AgentIcon: View {
     }
 }
 
-private extension AgentProvider {
-    var iconText: String {
-        switch self {
-        case .codex:
-            return "Codex"
-        }
-    }
-}
-
 private struct HookConfirmationButtonStyle: ButtonStyle {
     let isPrimary: Bool
 
@@ -1030,34 +1087,5 @@ private struct HookConfirmationButtonStyle: ButtonStyle {
                 Capsule(style: .continuous)
                     .fill(isPrimary ? .white.opacity(configuration.isPressed ? 0.78 : 0.92) : .white.opacity(configuration.isPressed ? 0.12 : 0.07))
             }
-    }
-}
-
-private extension String {
-    var eventColor: Color {
-        switch self {
-        case "PreToolUse":
-            return Color(red: 0.20, green: 0.55, blue: 1.00)
-        case "PermissionRequest":
-            return Color(red: 1.00, green: 0.58, blue: 0.08)
-        case "PostToolUse":
-            return Color(red: 0.00, green: 0.78, blue: 0.82)
-        case "PreCompact":
-            return Color(red: 0.45, green: 0.56, blue: 0.68)
-        case "PostCompact":
-            return Color(red: 0.36, green: 0.84, blue: 0.52)
-        case "Stop":
-            return Color(red: 0.25, green: 0.92, blue: 0.42)
-        case "UserPromptSubmit":
-            return Color(red: 0.68, green: 0.43, blue: 1.00)
-        case "SubagentStart":
-            return Color(red: 0.00, green: 0.78, blue: 1.00)
-        case "SubagentStop":
-            return Color(red: 0.56, green: 0.76, blue: 1.00)
-        case "SessionStart":
-            return Color(red: 0.56, green: 0.58, blue: 0.62)
-        default:
-            return .white.opacity(0.45)
-        }
     }
 }

@@ -25,6 +25,41 @@ final class AgentCompletionNotifierTests: XCTestCase {
         XCTAssertNil(secondNotice)
     }
 
+    func testShowsNoticeForNewOpenCodeIdleStatusOnlyOnce() throws {
+        var notifier = AgentCompletionNotifier()
+        let oldIdle = event(provider: .opencode, type: "session.status", timestamp: 10, threadID: "session-1", detail: "idle")
+        XCTAssertNil(notifier.notice(for: snapshot(provider: .opencode, events: [oldIdle])))
+
+        let newIdle = event(provider: .opencode, type: "session.status", timestamp: 20, threadID: "session-2", detail: "idle")
+        let firstNotice = try XCTUnwrap(notifier.notice(for: snapshot(provider: .opencode, events: [newIdle, oldIdle])))
+        let secondNotice = notifier.notice(for: snapshot(provider: .opencode, events: [newIdle, oldIdle]))
+
+        XCTAssertEqual(firstNotice.id, newIdle.id)
+        XCTAssertNil(secondNotice)
+    }
+
+    func testSeedsEachProviderIndependentlyBeforeShowingCompletionNotice() throws {
+        var notifier = AgentCompletionNotifier()
+        let codexStop = event(type: "Stop", timestamp: 10, threadID: "thread-1")
+        XCTAssertNil(notifier.notice(for: snapshot(events: [codexStop])))
+
+        let oldOpenCodeIdle = event(provider: .opencode, type: "session.status", timestamp: 20, threadID: "session-1", detail: "idle")
+        XCTAssertNil(notifier.notice(for: snapshot(provider: .opencode, events: [oldOpenCodeIdle])))
+
+        let newOpenCodeIdle = event(provider: .opencode, type: "session.status", timestamp: 30, threadID: "session-2", detail: "idle")
+        let notice = try XCTUnwrap(notifier.notice(for: snapshot(provider: .opencode, events: [newOpenCodeIdle, oldOpenCodeIdle])))
+
+        XCTAssertEqual(notice.id, newOpenCodeIdle.id)
+    }
+
+    func testIgnoresOpenCodeBusyStatusForCompletionNotice() {
+        var notifier = AgentCompletionNotifier()
+        XCTAssertNil(notifier.notice(for: snapshot(provider: .opencode, events: [])))
+        let busy = event(provider: .opencode, type: "session.status", timestamp: 20, threadID: "session-1", detail: "busy")
+
+        XCTAssertNil(notifier.notice(for: snapshot(provider: .opencode, events: [busy])))
+    }
+
     func testIgnoresNonStopEvents() {
         var notifier = AgentCompletionNotifier()
         let toolEvent = event(type: "PostToolUse", timestamp: 20, threadID: "thread-1", detail: "git status")
@@ -73,6 +108,7 @@ final class AgentCompletionNotifierTests: XCTestCase {
     }
 
     private func event(
+        provider: AgentProvider = .codex,
         type: String,
         timestamp: TimeInterval,
         threadID: String?,
@@ -80,7 +116,7 @@ final class AgentCompletionNotifierTests: XCTestCase {
         message: String? = nil
     ) -> AgentEvent {
         AgentEvent(
-            provider: .codex,
+            provider: provider,
             type: type,
             timestamp: Date(timeIntervalSince1970: timestamp),
             threadID: threadID,
@@ -91,12 +127,13 @@ final class AgentCompletionNotifierTests: XCTestCase {
     }
 
     private func snapshot(
+        provider: AgentProvider = .codex,
         events: [AgentEvent],
         threadID: String? = nil,
         hookStatus: AgentHookStatus = .registered
     ) -> AgentSnapshot {
         AgentSnapshot(
-            provider: .codex,
+            provider: provider,
             latestEventType: events.first?.type,
             hookStatus: hookStatus,
             currentThread: threadID.map {

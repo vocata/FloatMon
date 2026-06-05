@@ -109,6 +109,20 @@ final class CodexSnapshotReaderTests: XCTestCase {
         XCTAssertNotNil(snapshot.unavailableReason)
     }
 
+    func testExistingUnreadableStateSqliteReturnsUnavailableReason() throws {
+        let paths = testPaths
+        try runSQLite(
+            path: paths.stateSQLite.path,
+            query: "create table unexpected (id text);"
+        )
+        let reader = CodexSnapshotReader(paths: paths)
+
+        let snapshot = reader.readSnapshot(hookStatus: .registered)
+
+        XCTAssertNil(snapshot.currentThread)
+        XCTAssertEqual(snapshot.unavailableReason, "Codex sqlite state could not be read")
+    }
+
     func testSnapshotPreservesSqliteTextFieldsContainingPipes() throws {
         let paths = testPaths
         try runSQLite(

@@ -69,17 +69,21 @@ enum AgentHookStatus: Equatable {
 }
 
 struct AgentSnapshot: Equatable {
-    static let empty = AgentSnapshot(
-        provider: .codex,
-        latestEventType: nil,
-        hookStatus: .unknown,
-        currentThread: nil,
-        currentGoal: nil,
-        usageSummary: nil,
-        recentEvents: [],
-        lastUpdated: nil,
-        unavailableReason: nil
-    )
+    static let empty = empty(provider: .codex)
+
+    static func empty(provider: AgentProvider, hookStatus: AgentHookStatus = .unknown) -> AgentSnapshot {
+        AgentSnapshot(
+            provider: provider,
+            latestEventType: nil,
+            hookStatus: hookStatus,
+            currentThread: nil,
+            currentGoal: nil,
+            usageSummary: nil,
+            recentEvents: [],
+            lastUpdated: nil,
+            unavailableReason: nil
+        )
+    }
 
     let provider: AgentProvider
     let latestEventType: String?

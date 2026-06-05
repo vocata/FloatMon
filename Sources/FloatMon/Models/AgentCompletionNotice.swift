@@ -5,21 +5,27 @@ struct AgentCompletionNotice: Equatable, Identifiable {
 }
 
 struct AgentCompletionNotifier {
-    private var seenStopEventIDs: Set<String> = []
-    private var didSeedInitialStops = false
+    private var seenCompletionEventIDsByProvider: [AgentProvider: Set<String>] = [:]
+    private var seededProviders: Set<AgentProvider> = []
 
     mutating func notice(for snapshot: AgentSnapshot) -> AgentCompletionNotice? {
-        let stopEvents = snapshot.recentEvents.filter { $0.type == "Stop" }
+        let provider = snapshot.provider
+        let completionEvents = snapshot.recentEvents.filter {
+            $0.provider == provider && Self.isCompletionEvent($0)
+        }
         defer {
-            seenStopEventIDs.formUnion(stopEvents.map(\.id))
+            var seenCompletionEventIDs = seenCompletionEventIDsByProvider[provider] ?? []
+            seenCompletionEventIDs.formUnion(completionEvents.map(\.id))
+            seenCompletionEventIDsByProvider[provider] = seenCompletionEventIDs
         }
 
-        guard didSeedInitialStops else {
-            didSeedInitialStops = true
+        guard seededProviders.contains(provider) else {
+            seededProviders.insert(provider)
             return nil
         }
 
-        guard let event = stopEvents.first(where: { !seenStopEventIDs.contains($0.id) }) else {
+        let seenCompletionEventIDs = seenCompletionEventIDsByProvider[provider] ?? []
+        guard let event = completionEvents.first(where: { !seenCompletionEventIDs.contains($0.id) }) else {
             return nil
         }
 
@@ -31,5 +37,16 @@ struct AgentCompletionNotifier {
             return false
         }
         return latestEvent.id != notice.id
+    }
+
+    private static func isCompletionEvent(_ event: AgentEvent) -> Bool {
+        switch (event.provider, event.type) {
+        case (.codex, "Stop"):
+            return true
+        case (.opencode, "session.status"):
+            return event.detail == "idle"
+        default:
+            return false
+        }
     }
 }

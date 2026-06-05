@@ -2,7 +2,6 @@ import Foundation
 
 struct CodexSnapshotReader {
     let paths: CodexPaths
-    private static let recentEventReadByteLimit: UInt64 = 384 * 1024
     private static let usageBucketCount = 7
 
     private struct ThreadRow: Decodable {
@@ -21,20 +20,35 @@ struct CodexSnapshotReader {
         let timeUsedSeconds: Int
     }
 
-    private let usageRecorder: CodexUsageRecorder
+    private let usageRecorder: AgentUsageRecorder
+    private let eventLogReader: AgentEventLogReader
 
     init(paths: CodexPaths = CodexPaths(), now: @escaping () -> Date = Date.init) {
         self.paths = paths
-        self.usageRecorder = CodexUsageRecorder(paths: paths, now: now)
+        self.usageRecorder = AgentUsageRecorder(paths: paths, now: now)
+        self.eventLogReader = AgentEventLogReader(paths: paths, provider: .codex)
     }
 
     func readSnapshot(hookStatus: AgentHookStatus) -> AgentSnapshot {
         try? usageRecorder.recordCurrentThreads()
         let events = readRecentEvents(limit: 20)
-        let thread = readCurrentThread()
-        let goal = thread.flatMap { readGoal(threadID: $0.id) }
-        let usageSummary = usageRecorder.readSummary(dayCount: Self.usageBucketCount)
         let sqliteAvailable = FileManager.default.fileExists(atPath: paths.stateSQLite.path)
+        let unavailableReason: String?
+        let thread: AgentThreadSummary?
+        if sqliteAvailable {
+            do {
+                thread = try readCurrentThread()
+                unavailableReason = nil
+            } catch {
+                thread = nil
+                unavailableReason = "Codex sqlite state could not be read"
+            }
+        } else {
+            thread = nil
+            unavailableReason = "Codex sqlite state is unavailable"
+        }
+        let goal = thread.flatMap { try? readGoal(threadID: $0.id) }
+        let usageSummary = usageRecorder.readSummary(dayCount: Self.usageBucketCount)
 
         return AgentSnapshot(
             provider: .codex,
@@ -45,77 +59,23 @@ struct CodexSnapshotReader {
             usageSummary: usageSummary,
             recentEvents: events,
             lastUpdated: Date(),
-            unavailableReason: sqliteAvailable ? nil : "Codex sqlite state is unavailable"
+            unavailableReason: unavailableReason
         )
     }
 
     func readRecentEvents(limit: Int) -> [AgentEvent] {
-        let events = eventLogURLs()
-            .flatMap(readEvents)
-            .sorted { $0.timestamp > $1.timestamp }
-
-        var recentEvents: [AgentEvent] = []
-        for event in events {
-            guard recentEvents.count < limit else { break }
-            if recentEvents.last.map({ Self.isDuplicate(event, of: $0) }) == true {
-                continue
-            }
-            recentEvents.append(event)
-        }
-        return recentEvents
+        eventLogReader.readRecentEvents(limit: limit)
     }
 
-    private func readEvents(from url: URL) -> [AgentEvent] {
-        do {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
-
-            let fileSize = try handle.seekToEnd()
-            let offset = fileSize > Self.recentEventReadByteLimit
-                ? fileSize - Self.recentEventReadByteLimit
-                : 0
-            try handle.seek(toOffset: offset)
-            guard var data = try handle.readToEnd() else { return [] }
-
-            if offset > 0 {
-                guard let firstNewline = data.firstIndex(of: 0x0A) else { return [] }
-                data.removeSubrange(data.startIndex...firstNewline)
-            }
-
-            guard let content = String(data: data, encoding: .utf8) else { return [] }
-            return content
-                .split(separator: "\n")
-                .compactMap { AgentEvent.decodeLossyJSONLine(String($0)) }
-        } catch {
-            return []
-        }
-    }
-
-    private func eventLogURLs() -> [URL] {
-        guard let eventFiles = try? FileManager.default.contentsOfDirectory(
-            at: paths.providerDirectory(provider: .codex),
-            includingPropertiesForKeys: nil
-        ) else {
-            return []
-        }
-
-        return eventFiles.filter { $0.pathExtension == "jsonl" }
-    }
-
-    private static func isDuplicate(_ event: AgentEvent, of previousEvent: AgentEvent) -> Bool {
-        event.provider == previousEvent.provider
-            && event.type == previousEvent.type
-            && event.threadID == previousEvent.threadID
-            && event.toolName == previousEvent.toolName
-            && event.detail == previousEvent.detail
-            && event.message == previousEvent.message
-            && abs(event.timestamp.timeIntervalSince(previousEvent.timestamp)) <= 2
-    }
-
-    private func readCurrentThread() -> AgentThreadSummary? {
+    private func readCurrentThread() throws -> AgentThreadSummary? {
         guard FileManager.default.fileExists(atPath: paths.stateSQLite.path) else { return nil }
         let query = "select id, title, cwd, tokens_used as tokensUsed, updated_at_ms as updatedAtMS from threads order by updated_at_ms desc limit 1;"
-        guard let row: ThreadRow = runSQLite(path: paths.stateSQLite.path, query: query)?.first else { return nil }
+        let rows: [ThreadRow] = try SQLiteJSONRunner.runOrThrow(
+            path: paths.stateSQLite.path,
+            query: query,
+            errorDomain: "FloatMon.CodexSnapshotReader"
+        )
+        guard let row = rows.first else { return nil }
 
         return AgentThreadSummary(
             id: row.id,
@@ -126,11 +86,16 @@ struct CodexSnapshotReader {
         )
     }
 
-    private func readGoal(threadID: String) -> AgentGoalSummary? {
+    private func readGoal(threadID: String) throws -> AgentGoalSummary? {
         guard FileManager.default.fileExists(atPath: paths.goalsSQLite.path) else { return nil }
         let escapedThreadID = threadID.replacingOccurrences(of: "'", with: "''")
         let query = "select objective, status, token_budget as tokenBudget, tokens_used as tokensUsed, time_used_seconds as timeUsedSeconds from thread_goals where thread_id='\(escapedThreadID)' limit 1;"
-        guard let row: GoalRow = runSQLite(path: paths.goalsSQLite.path, query: query)?.first else { return nil }
+        let rows: [GoalRow] = try SQLiteJSONRunner.runOrThrow(
+            path: paths.goalsSQLite.path,
+            query: query,
+            errorDomain: "FloatMon.CodexSnapshotReader"
+        )
+        guard let row = rows.first else { return nil }
 
         return AgentGoalSummary(
             objective: row.objective,
@@ -141,23 +106,4 @@ struct CodexSnapshotReader {
         )
     }
 
-    private func runSQLite<Row: Decodable>(path: String, query: String) -> [Row]? {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = ["-json", path, query]
-        process.standardOutput = output
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        return try? JSONDecoder().decode([Row].self, from: data)
-    }
 }

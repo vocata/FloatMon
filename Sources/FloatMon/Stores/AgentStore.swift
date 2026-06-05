@@ -6,12 +6,12 @@ import Observation
 final class AgentStore {
     var snapshot = AgentSnapshot.empty
     var completionNotice: AgentCompletionNotice?
+    var selectedProvider: AgentProvider = .codex
 
-    private let paths: CodexPaths
-    private let reader: CodexSnapshotReader
-    private let registrationService: CodexHookRegistrationService
+    private let integrations: [AgentProvider: any AgentIntegration]
     private let executablePath: String
-    private var hookStatus: AgentHookStatus = .unknown
+    private var hookStatuses: [AgentProvider: AgentHookStatus] = [:]
+    private var snapshotsByProvider: [AgentProvider: AgentSnapshot] = [:]
     private var isRefreshing = false
     private var refreshTask: Task<Void, Never>?
     private var timer: Timer?
@@ -21,13 +21,18 @@ final class AgentStore {
     init(
         paths: CodexPaths = CodexPaths(),
         refreshInterval: TimeInterval = 2,
-        executablePath: String = Bundle.main.executablePath ?? "/Applications/FloatMon.app/Contents/MacOS/FloatMon"
+        executablePath: String = Bundle.main.executablePath ?? "/Applications/FloatMon.app/Contents/MacOS/FloatMon",
+        integrations: [any AgentIntegration]? = nil
     ) {
-        self.paths = paths
-        self.reader = CodexSnapshotReader(paths: paths)
-        self.registrationService = CodexHookRegistrationService(paths: paths)
+        self.integrations = Self.integrationMap(
+            integrations ?? [
+                CodexAgentIntegration(paths: paths),
+                OpenCodeAgentIntegration(paths: paths)
+            ]
+        )
         self.executablePath = executablePath
-        refreshHookStatus()
+        refreshHookStatuses()
+        snapshot = AgentSnapshot.empty(provider: selectedProvider, hookStatus: hookStatuses[selectedProvider] ?? .unknown)
         timer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refresh()
@@ -48,18 +53,24 @@ final class AgentStore {
             refreshTask?.cancel()
             isRefreshing = false
         }
+
+        let provider = selectedProvider
+        let status = hookStatuses[provider] ?? .unknown
         isRefreshing = true
 
-        let reader = reader
-        let hookStatus = hookStatus
+        let integration = integrations[provider]
         refreshTask = Task { [weak self] in
             let snapshot = await Task.detached(priority: .utility) {
-                reader.readSnapshot(hookStatus: hookStatus)
+                integration?.readSnapshot(hookStatus: status)
+                    ?? AgentSnapshot.empty(provider: provider, hookStatus: .failed("Agent provider is not configured"))
             }.value
 
             guard let self, !Task.isCancelled else { return }
-            self.snapshot = snapshot
-            self.updateCompletionNotice(for: snapshot)
+            self.snapshotsByProvider[provider] = snapshot
+            if self.selectedProvider == provider {
+                self.snapshot = snapshot
+                self.updateCompletionNotice(for: snapshot)
+            }
             self.isRefreshing = false
         }
     }
@@ -71,33 +82,50 @@ final class AgentStore {
         }
     }
 
-    func refreshHookStatus() {
-        if registrationService.isRegistered(executablePath: executablePath) {
-            hookStatus = .registered
-        } else {
-            hookStatus = .missing
-        }
+    func selectProvider(_ provider: AgentProvider) {
+        guard selectedProvider != provider else { return }
+        selectedProvider = provider
+        snapshot = snapshotsByProvider[provider]
+            ?? AgentSnapshot.empty(provider: provider, hookStatus: hookStatuses[provider] ?? .unknown)
+        completionNotice = nil
         refresh(force: true)
     }
 
-    func registerCodexHook() {
+    func refreshHookStatus() {
+        refreshHookStatuses()
+        refresh(force: true)
+    }
+
+    func registerSelectedIntegration() {
+        let provider = selectedProvider
+
         do {
-            _ = try registrationService.register(executablePath: executablePath)
-            hookStatus = .registered
+            try integration(for: provider).register(executablePath: executablePath)
+            hookStatuses[provider] = .registered
         } catch {
-            hookStatus = .failed(error.localizedDescription)
+            hookStatuses[provider] = .failed(error.localizedDescription)
         }
         refresh()
     }
 
-    func detachCodexHook() {
+    func detachSelectedIntegration() {
+        let provider = selectedProvider
+
         do {
-            _ = try registrationService.detach()
-            hookStatus = .missing
+            try integration(for: provider).detach()
+            hookStatuses[provider] = .missing
         } catch {
-            hookStatus = .failed(error.localizedDescription)
+            hookStatuses[provider] = .failed(error.localizedDescription)
         }
         refresh(force: true)
+    }
+
+    private func refreshHookStatuses() {
+        for provider in AgentProvider.allCases {
+            hookStatuses[provider] = integration(for: provider).isRegistered(executablePath: executablePath)
+                ? .registered
+                : .missing
+        }
     }
 
     private func updateCompletionNotice(for snapshot: AgentSnapshot) {
@@ -117,5 +145,37 @@ final class AgentStore {
 
     private func clearCompletionNotice() {
         completionNotice = nil
+    }
+
+    private func integration(for provider: AgentProvider) -> any AgentIntegration {
+        integrations[provider] ?? MissingAgentIntegration(provider: provider)
+    }
+
+    private static func integrationMap(_ integrations: [any AgentIntegration]) -> [AgentProvider: any AgentIntegration] {
+        Dictionary(uniqueKeysWithValues: integrations.map { ($0.provider, $0) })
+    }
+}
+
+private struct MissingAgentIntegration: AgentIntegration {
+    let provider: AgentProvider
+
+    func readSnapshot(hookStatus: AgentHookStatus) -> AgentSnapshot {
+        AgentSnapshot.empty(provider: provider, hookStatus: .failed("Agent provider is not configured"))
+    }
+
+    func isRegistered(executablePath: String) -> Bool {
+        false
+    }
+
+    func register(executablePath: String) throws {
+        throw NSError(domain: "FloatMon.AgentStore", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "Agent provider is not configured"
+        ])
+    }
+
+    func detach() throws {
+        throw NSError(domain: "FloatMon.AgentStore", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "Agent provider is not configured"
+        ])
     }
 }
