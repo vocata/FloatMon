@@ -607,9 +607,7 @@ private struct UsageBar: View {
         let labelHeight: CGFloat = 18
         let barShape = Capsule(style: .continuous)
         let ratio = peakTokens > 0 ? CGFloat(bucket.tokensUsed) / CGFloat(peakTokens) : 0
-        let rawBarHeight = chartHeight * min(max(ratio, 0), 1)
-        let minimumNonZeroBarHeight = min(CGFloat(14), chartHeight)
-        let barHeight = max(rawBarHeight, minimumNonZeroBarHeight)
+        let barHeight = chartHeight * min(max(ratio, 0), 1)
 
         VStack(spacing: 5) {
             ZStack(alignment: .bottom) {
