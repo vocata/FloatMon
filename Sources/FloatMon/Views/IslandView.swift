@@ -31,12 +31,13 @@ struct IslandView: View {
     @State private var expanded = false
     @State private var monitorMode: AgentMonitorMode = .apps
     @State private var sortMode: ProcessSortMode = .cpu
+    @State private var selectedCollapsedAppIDs: [ProcessSortMode: pid_t] = [:]
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
     @State private var togglePressed = false
     @State private var collapsedFlipAngle: Double = 0
     @State private var isCollapsedHoverSuppressed = false
-    @State private var collapsedSlideOffset: CGFloat = 0
+    @State private var collapsedSlideOffset = CGSize.zero
     @State private var collapsedSlideOpacity = 1.0
     @State private var isCollapsedSliding = false
 
@@ -46,8 +47,16 @@ struct IslandView: View {
         self.resizeWindow = resizeWindow
     }
 
+    private var sortedApps: [AppProcess] {
+        sortMode.sorted(store.apps)
+    }
+
     private var featuredApp: AppProcess? {
-        sortMode.sorted(store.apps).first
+        if let selectedID = selectedCollapsedAppIDs[sortMode],
+           let selectedApp = sortedApps.first(where: { $0.id == selectedID }) {
+            return selectedApp
+        }
+        return sortedApps.first
     }
 
     private var featuredPressure: ResourcePressure {
@@ -189,7 +198,8 @@ struct IslandView: View {
                 onClick: toggleExpanded,
                 onPressChanged: { togglePressed = $0 },
                 onRightClick: switchCollapsedMode,
-                onHorizontalSwipe: switchCollapsedModeContent
+                onHorizontalSwipe: switchCollapsedModeContent,
+                onVerticalSwipe: switchCollapsedAppSelection
             )
         )
     }
@@ -280,7 +290,7 @@ struct IslandView: View {
             modeTint: .blue,
             status: statusDot(color: featuredPressureColor)
         )
-        .offset(x: collapsedSlideOffset)
+        .offset(x: collapsedSlideOffset.width, y: collapsedSlideOffset.height)
         .opacity(collapsedSlideOpacity)
         .externalHoverCard(
             title: "App · \(featuredApp?.name ?? "No open apps")",
@@ -299,7 +309,7 @@ struct IslandView: View {
             modeTint: .cyan,
             status: statusDot(color: agentStatusColor, isPulsing: agentStore.completionNotice != nil)
         )
-        .offset(x: collapsedSlideOffset)
+        .offset(x: collapsedSlideOffset.width, y: collapsedSlideOffset.height)
         .opacity(collapsedSlideOpacity)
         .externalHoverCard(
             title: "Agent · \(agentStore.snapshot.provider.displayName)",
@@ -521,12 +531,47 @@ struct IslandView: View {
         }
     }
 
+    private func switchCollapsedAppSelection(_ direction: WindowVerticalSwipeDirection) {
+        guard !expanded, monitorMode == .apps else { return }
+        guard !isCollapsedSliding else { return }
+
+        let appIDs = sortedApps.map(\.id)
+        let currentID = featuredApp?.id
+        guard let targetID = CollapsedAppSelectionMode.target(
+            currentID: currentID,
+            sortedAppIDs: appIDs,
+            swipeDirection: direction
+        ) else {
+            return
+        }
+        guard targetID != currentID else { return }
+
+        slideCollapsedContent(direction: direction) {
+            selectedCollapsedAppIDs[sortMode] = targetID
+        }
+    }
+
     private func slideCollapsedContent(direction: WindowSwipeDirection, updateContent: @escaping @MainActor () -> Void) {
+        let outgoingOffset = CGSize(
+            width: direction == .left ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel,
+            height: 0
+        )
+        slideCollapsedContent(outgoingOffset: outgoingOffset, updateContent: updateContent)
+    }
+
+    private func slideCollapsedContent(direction: WindowVerticalSwipeDirection, updateContent: @escaping @MainActor () -> Void) {
+        let outgoingOffset = CGSize(
+            width: 0,
+            height: direction == .up ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel
+        )
+        slideCollapsedContent(outgoingOffset: outgoingOffset, updateContent: updateContent)
+    }
+
+    private func slideCollapsedContent(outgoingOffset: CGSize, updateContent: @escaping @MainActor () -> Void) {
         isCollapsedSliding = true
         isCollapsedHoverSuppressed = true
         ExternalHoverTooltipController.hideTransiently()
-        let outgoingOffset = direction == .left ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel
-        let incomingOffset = -outgoingOffset
+        let incomingOffset = CGSize(width: -outgoingOffset.width, height: -outgoingOffset.height)
 
         withAnimation(.easeIn(duration: Metrics.sortSlideOutDuration)) {
             collapsedSlideOffset = outgoingOffset
@@ -539,7 +584,7 @@ struct IslandView: View {
             collapsedSlideOffset = incomingOffset
 
             withAnimation(.easeOut(duration: Metrics.sortSlideInDuration)) {
-                collapsedSlideOffset = 0
+                collapsedSlideOffset = .zero
                 collapsedSlideOpacity = 1
             }
 
