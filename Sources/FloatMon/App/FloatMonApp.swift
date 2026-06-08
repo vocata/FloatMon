@@ -6,6 +6,7 @@ struct FloatMonApp: App {
 
     init() {
         _ = CodexHookWriter.runIfRequested()
+        _ = OpenCodeHookWriter.runIfRequested()
     }
 
     var body: some Scene {

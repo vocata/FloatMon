@@ -77,6 +77,37 @@ final class AgentEventTests: XCTestCase {
         XCTAssertEqual(event.compactSummary, "PostToolUse · Bash · git diff · \(longMessage)")
     }
 
+    func testOpenCodeSessionStatusActivitySignalsMatchStatusDetail() {
+        let busy = AgentEvent(
+            provider: .opencode,
+            type: "session.status",
+            timestamp: Date(timeIntervalSince1970: 1779868647.25),
+            threadID: "session-1",
+            toolName: nil,
+            detail: "busy"
+        )
+        let completed = AgentEvent(
+            provider: .opencode,
+            type: "session.status",
+            timestamp: Date(timeIntervalSince1970: 1779868648.25),
+            threadID: "session-1",
+            toolName: nil,
+            detail: "idle"
+        )
+        let retrying = AgentEvent(
+            provider: .opencode,
+            type: "session.status",
+            timestamp: Date(timeIntervalSince1970: 1779868649.25),
+            threadID: "session-1",
+            toolName: nil,
+            detail: "retry"
+        )
+
+        XCTAssertEqual(busy.activitySignal, .active)
+        XCTAssertEqual(completed.activitySignal, .completed)
+        XCTAssertEqual(retrying.activitySignal, .retrying)
+    }
+
     func testReturnsNilForMalformedEventLine() {
         XCTAssertNil(AgentEvent.decodeLossyJSONLine("{not-json"))
     }

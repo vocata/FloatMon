@@ -1,5 +1,17 @@
 import Foundation
 
+enum AgentActivitySignal: Equatable {
+    case active
+    case permission
+    case output
+    case completed
+    case retrying
+    case message
+    case compacting
+    case error
+    case neutral
+}
+
 struct AgentEvent: Codable, Equatable, Identifiable {
     var id: String {
         "\(provider.rawValue)-\(type)-\(timestamp.timeIntervalSince1970)-\(threadID ?? "none")-\(toolName ?? "none")-\(detail ?? "none")-\(message ?? "none")"
@@ -39,6 +51,47 @@ struct AgentEvent: Codable, Equatable, Identifiable {
             parts.append(message.singleLineSummary(maxLength: 360))
         }
         return parts.joined(separator: " · ")
+    }
+
+    var activitySignal: AgentActivitySignal {
+        if provider == .opencode, type == "session.status" {
+            return openCodeSessionStatusSignal
+        }
+
+        switch type {
+        case "tool.execute.before", "PreToolUse", "SubagentStart":
+            return .active
+        case "permission.asked", "PermissionRequest":
+            return .permission
+        case "tool.execute.after", "PostToolUse":
+            return .output
+        case "permission.replied", "session.compacted", "Stop", "PostCompact", "SubagentStop":
+            return .completed
+        case "message.updated", "message.part.updated", "UserPromptSubmit":
+            return .message
+        case "session.error":
+            return .error
+        case "PreCompact":
+            return .compacting
+        default:
+            return .neutral
+        }
+    }
+
+    private var openCodeSessionStatusSignal: AgentActivitySignal {
+        guard let detail = Self.nonEmpty(detail) else {
+            return .neutral
+        }
+        if detail == "idle" {
+            return .completed
+        }
+        if detail == "busy" {
+            return .active
+        }
+        if detail == "retry" {
+            return .retrying
+        }
+        return .neutral
     }
 
     private enum CodingKeys: String, CodingKey {

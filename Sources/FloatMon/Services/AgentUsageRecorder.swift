@@ -1,13 +1,14 @@
 import Foundation
 
-struct CodexThreadTokenSample: Equatable {
+struct AgentThreadTokenSample: Equatable {
     let id: String
     let tokensUsed: Int
     let updatedAtMS: Int
 }
 
-struct CodexUsageRecorder {
+struct AgentUsageRecorder {
     let paths: CodexPaths
+    let provider: AgentProvider
     private let fileManager: FileManager
     private let now: () -> Date
 
@@ -31,10 +32,12 @@ struct CodexUsageRecorder {
 
     init(
         paths: CodexPaths = CodexPaths(),
+        provider: AgentProvider = .codex,
         fileManager: FileManager = .default,
         now: @escaping () -> Date = Date.init
     ) {
         self.paths = paths
+        self.provider = provider
         self.fileManager = fileManager
         self.now = now
     }
@@ -42,9 +45,13 @@ struct CodexUsageRecorder {
     func recordCurrentThreads() throws {
         guard fileManager.fileExists(atPath: paths.stateSQLite.path) else { return }
         let query = "select id, tokens_used as tokensUsed, updated_at_ms as updatedAtMS from threads;"
-        let rows: [ThreadRow] = runSQLite(path: paths.stateSQLite.path, query: query) ?? []
+        let rows: [ThreadRow] = try SQLiteJSONRunner.runOrThrow(
+            path: paths.stateSQLite.path,
+            query: query,
+            errorDomain: "FloatMon.AgentUsageRecorder"
+        )
         try record(samples: rows.map {
-            CodexThreadTokenSample(
+            AgentThreadTokenSample(
                 id: $0.id,
                 tokensUsed: $0.tokensUsed,
                 updatedAtMS: Int($0.updatedAtMS)
@@ -52,7 +59,7 @@ struct CodexUsageRecorder {
         })
     }
 
-    func record(samples: [CodexThreadTokenSample]) throws {
+    func record(samples: [AgentThreadTokenSample]) throws {
         try prepareStore()
         let day = Self.dayString(for: now())
         let seenAtMS = Int(now().timeIntervalSince1970 * 1000)
@@ -82,13 +89,18 @@ struct CodexUsageRecorder {
         }
 
         statements.append("commit;")
-        try runSQLiteOrThrow(path: paths.usageSQLite().path, query: statements.joined(separator: "\n"))
-        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: paths.usageSQLite().path)
+        try SQLiteJSONRunner.execute(
+            path: paths.usageSQLite(provider: provider).path,
+            query: statements.joined(separator: "\n"),
+            errorDomain: "FloatMon.AgentUsageRecorder"
+        )
+        try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: paths.usageSQLite(provider: provider).path)
     }
 
     func readSummary(dayCount: Int) -> AgentUsageSummary? {
-        guard dayCount > 0, fileManager.fileExists(atPath: paths.usageSQLite().path) else { return nil }
-        guard let totals: TotalsRow = runSQLite(path: paths.usageSQLite().path, query: """
+        let sqliteURL = paths.usageSQLite(provider: provider)
+        guard dayCount > 0, fileManager.fileExists(atPath: sqliteURL.path) else { return nil }
+        guard let totals: TotalsRow = SQLiteJSONRunner.run(path: sqliteURL.path, query: """
         select
           coalesce((select sum(tokens_used) from daily_thread_usage), 0) as totalTokens,
           (select count(*) from thread_token_state) as threadCount,
@@ -101,7 +113,7 @@ struct CodexUsageRecorder {
         let today = calendar.startOfDay(for: now())
         guard let firstDay = calendar.date(byAdding: .day, value: 1 - dayCount, to: today) else { return nil }
         let firstDayString = Self.dayString(for: firstDay)
-        let rows: [BucketRow] = runSQLite(path: paths.usageSQLite().path, query: """
+        let rows: [BucketRow] = SQLiteJSONRunner.run(path: sqliteURL.path, query: """
         select day, coalesce(sum(tokens_used), 0) as tokensUsed, count(thread_id) as threadCount
         from daily_thread_usage
         where day >= \(Self.sqlString(firstDayString))
@@ -130,8 +142,8 @@ struct CodexUsageRecorder {
 
     private func prepareStore() throws {
         try fileManager.createDirectory(at: paths.usageDirectory, withIntermediateDirectories: true)
-        runSQLiteIgnoringFailure(
-            path: paths.usageSQLite().path,
+        SQLiteJSONRunner.executeIgnoringFailure(
+            path: paths.usageSQLite(provider: provider).path,
             query: "alter table daily_thread_usage add column last_captured_at_ms integer;"
         )
     }
@@ -163,49 +175,4 @@ struct CodexUsageRecorder {
         return formatter.string(from: date)
     }
 
-    private func runSQLite<Row: Decodable>(path: String, query: String) -> [Row]? {
-        let process = Process()
-        let output = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = ["-json", path, query]
-        process.standardOutput = output
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-
-        guard process.terminationStatus == 0 else { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        return try? JSONDecoder().decode([Row].self, from: data)
-    }
-
-    private func runSQLiteOrThrow(path: String, query: String) throws {
-        let process = Process()
-        let error = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [path, query]
-        process.standardError = error
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            let data = error.fileHandleForReading.readDataToEndOfFile()
-            let message = String(data: data, encoding: .utf8) ?? "sqlite failed"
-            throw NSError(domain: "FloatMon.CodexUsageRecorder", code: Int(process.terminationStatus), userInfo: [
-                NSLocalizedDescriptionKey: message
-            ])
-        }
-    }
-
-    private func runSQLiteIgnoringFailure(path: String, query: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [path, query]
-        process.standardError = Pipe()
-        try? process.run()
-        process.waitUntilExit()
-    }
 }

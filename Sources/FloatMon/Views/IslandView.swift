@@ -31,14 +31,15 @@ struct IslandView: View {
     @State private var expanded = false
     @State private var monitorMode: AgentMonitorMode = .apps
     @State private var sortMode: ProcessSortMode = .cpu
+    @State private var selectedCollapsedAppIDs: [ProcessSortMode: pid_t] = [:]
     @State private var pendingForceQuitApp: AppProcess?
     @State private var focusError: String?
     @State private var togglePressed = false
     @State private var collapsedFlipAngle: Double = 0
     @State private var isCollapsedHoverSuppressed = false
-    @State private var appSortSlideOffset: CGFloat = 0
-    @State private var appSortSlideOpacity = 1.0
-    @State private var isAppSortSliding = false
+    @State private var collapsedSlideOffset = CGSize.zero
+    @State private var collapsedSlideOpacity = 1.0
+    @State private var isCollapsedSliding = false
 
     init(store: ProcessStore, agentStore: AgentStore, resizeWindow: @escaping (Bool) -> Void) {
         _store = State(initialValue: store)
@@ -46,8 +47,16 @@ struct IslandView: View {
         self.resizeWindow = resizeWindow
     }
 
+    private var sortedApps: [AppProcess] {
+        sortMode.sorted(store.apps)
+    }
+
     private var featuredApp: AppProcess? {
-        sortMode.sorted(store.apps).first
+        if let selectedID = selectedCollapsedAppIDs[sortMode],
+           let selectedApp = sortedApps.first(where: { $0.id == selectedID }) {
+            return selectedApp
+        }
+        return sortedApps.first
     }
 
     private var featuredPressure: ResourcePressure {
@@ -154,8 +163,9 @@ struct IslandView: View {
                     AgentMonitorView(
                         snapshot: agentStore.snapshot,
                         refresh: { agentStore.refreshHookStatus() },
-                        registerHook: { agentStore.registerCodexHook() },
-                        detachHook: { agentStore.detachCodexHook() }
+                        selectProvider: { agentStore.selectProvider($0) },
+                        registerHook: { agentStore.registerSelectedIntegration() },
+                        detachHook: { agentStore.detachSelectedIntegration() }
                     )
                     .transition(.opacity)
                 }
@@ -188,7 +198,8 @@ struct IslandView: View {
                 onClick: toggleExpanded,
                 onPressChanged: { togglePressed = $0 },
                 onRightClick: switchCollapsedMode,
-                onHorizontalSwipe: switchCollapsedAppSortMode
+                onHorizontalSwipe: switchCollapsedModeContent,
+                onVerticalSwipe: switchCollapsedAppSelection
             )
         )
     }
@@ -279,8 +290,8 @@ struct IslandView: View {
             modeTint: .blue,
             status: statusDot(color: featuredPressureColor)
         )
-        .offset(x: appSortSlideOffset)
-        .opacity(appSortSlideOpacity)
+        .offset(x: collapsedSlideOffset.width, y: collapsedSlideOffset.height)
+        .opacity(collapsedSlideOpacity)
         .externalHoverCard(
             title: "App · \(featuredApp?.name ?? "No open apps")",
             detailLines: collapsedAppDetailLines,
@@ -298,9 +309,11 @@ struct IslandView: View {
             modeTint: .cyan,
             status: statusDot(color: agentStatusColor, isPulsing: agentStore.completionNotice != nil)
         )
+        .offset(x: collapsedSlideOffset.width, y: collapsedSlideOffset.height)
+        .opacity(collapsedSlideOpacity)
         .externalHoverCard(
             title: "Agent · \(agentStore.snapshot.provider.displayName)",
-            subtitle: agentStore.snapshot.hookStatus.label,
+            subtitle: collapsedAgentStatusLabel,
             detailLines: collapsedAgentDetailLines,
             agentProvider: agentStore.snapshot.provider,
             tone: agentStatusTone,
@@ -401,57 +414,15 @@ struct IslandView: View {
     }
 
     private var agentStatusColor: Color {
-        switch agentStore.snapshot.latestEventType {
-        case "PreToolUse":
-            return Color(red: 0.20, green: 0.55, blue: 1.00)
-        case "PermissionRequest":
-            return Color(red: 1.00, green: 0.58, blue: 0.08)
-        case "PostToolUse":
-            return Color(red: 0.00, green: 0.78, blue: 0.82)
-        case "PreCompact":
-            return Color(red: 0.45, green: 0.56, blue: 0.68)
-        case "PostCompact":
-            return Color(red: 0.36, green: 0.84, blue: 0.52)
-        case "Stop":
-            return Color(red: 0.25, green: 0.92, blue: 0.42)
-        case "UserPromptSubmit":
-            return Color(red: 0.68, green: 0.43, blue: 1.00)
-        case "SubagentStart":
-            return Color(red: 0.00, green: 0.78, blue: 1.00)
-        case "SubagentStop":
-            return Color(red: 0.56, green: 0.76, blue: 1.00)
-        case "SessionStart":
-            return Color(red: 0.56, green: 0.58, blue: 0.62)
-        default:
-            return .gray
-        }
+        latestAgentActivitySignal.color
     }
 
     private var agentStatusTone: ExternalHoverTooltipTone {
-        switch agentStore.snapshot.latestEventType {
-        case "PreToolUse":
-            return .blue
-        case "PermissionRequest":
-            return .orange
-        case "PostToolUse":
-            return .teal
-        case "PreCompact":
-            return .neutral
-        case "PostCompact":
-            return .green
-        case "Stop":
-            return .green
-        case "UserPromptSubmit":
-            return .purple
-        case "SubagentStart":
-            return .cyan
-        case "SubagentStop":
-            return .blue
-        case "SessionStart":
-            return .neutral
-        default:
-            return .neutral
-        }
+        latestAgentActivitySignal.tone
+    }
+
+    private var latestAgentActivitySignal: AgentActivitySignal {
+        agentStore.snapshot.recentEvents.first?.activitySignal ?? .neutral
     }
 
     private var collapsedAppDetailLines: [String] {
@@ -468,7 +439,7 @@ struct IslandView: View {
     private var collapsedAgentDetailLines: [String] {
         let snapshot = agentStore.snapshot
         guard snapshot.hookStatus == .registered else {
-            return []
+            return [collapsedAgentStatusLabel]
         }
 
         var lines: [String] = []
@@ -486,6 +457,19 @@ struct IslandView: View {
         }
 
         return lines
+    }
+
+    private var collapsedAgentStatusLabel: String {
+        switch agentStore.snapshot.hookStatus {
+        case .unknown:
+            return "Checking \(agentStore.snapshot.provider.integrationName.lowercased())"
+        case .missing:
+            return "\(agentStore.snapshot.provider.integrationName) not registered"
+        case .registered:
+            return "\(agentStore.snapshot.provider.integrationName) active"
+        case .failed:
+            return "\(agentStore.snapshot.provider.integrationName) error"
+        }
     }
 
     private func toggleExpanded() {
@@ -527,36 +511,85 @@ struct IslandView: View {
         }
     }
 
-    private func switchCollapsedAppSortMode(_ direction: WindowSwipeDirection) {
+    private func switchCollapsedModeContent(_ direction: WindowSwipeDirection) {
+        guard !expanded else { return }
+        guard !isCollapsedSliding else { return }
+
+        switch monitorMode {
+        case .apps:
+            let targetMode = CollapsedAppSortMode.target(for: direction)
+            guard sortMode != targetMode else { return }
+            slideCollapsedContent(direction: direction) {
+                sortMode = targetMode
+            }
+        case .agent:
+            let targetProvider = CollapsedAgentProviderMode.target(current: agentStore.selectedProvider, swipeDirection: direction)
+            guard agentStore.selectedProvider != targetProvider else { return }
+            slideCollapsedContent(direction: direction) {
+                agentStore.selectProvider(targetProvider)
+            }
+        }
+    }
+
+    private func switchCollapsedAppSelection(_ direction: WindowVerticalSwipeDirection) {
         guard !expanded, monitorMode == .apps else { return }
+        guard !isCollapsedSliding else { return }
 
-        let targetMode = CollapsedAppSortMode.target(for: direction)
-        guard sortMode != targetMode else { return }
-        guard !isAppSortSliding else { return }
+        let appIDs = sortedApps.map(\.id)
+        let currentID = featuredApp?.id
+        guard let targetID = CollapsedAppSelectionMode.target(
+            currentID: currentID,
+            sortedAppIDs: appIDs,
+            swipeDirection: direction
+        ) else {
+            return
+        }
+        guard targetID != currentID else { return }
 
-        isAppSortSliding = true
+        slideCollapsedContent(direction: direction) {
+            selectedCollapsedAppIDs[sortMode] = targetID
+        }
+    }
+
+    private func slideCollapsedContent(direction: WindowSwipeDirection, updateContent: @escaping @MainActor () -> Void) {
+        let outgoingOffset = CGSize(
+            width: direction == .left ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel,
+            height: 0
+        )
+        slideCollapsedContent(outgoingOffset: outgoingOffset, updateContent: updateContent)
+    }
+
+    private func slideCollapsedContent(direction: WindowVerticalSwipeDirection, updateContent: @escaping @MainActor () -> Void) {
+        let outgoingOffset = CGSize(
+            width: 0,
+            height: direction == .up ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel
+        )
+        slideCollapsedContent(outgoingOffset: outgoingOffset, updateContent: updateContent)
+    }
+
+    private func slideCollapsedContent(outgoingOffset: CGSize, updateContent: @escaping @MainActor () -> Void) {
+        isCollapsedSliding = true
         isCollapsedHoverSuppressed = true
         ExternalHoverTooltipController.hideTransiently()
-        let outgoingOffset = direction == .left ? -Metrics.sortSlideTravel : Metrics.sortSlideTravel
-        let incomingOffset = -outgoingOffset
+        let incomingOffset = CGSize(width: -outgoingOffset.width, height: -outgoingOffset.height)
 
         withAnimation(.easeIn(duration: Metrics.sortSlideOutDuration)) {
-            appSortSlideOffset = outgoingOffset
-            appSortSlideOpacity = 0
+            collapsedSlideOffset = outgoingOffset
+            collapsedSlideOpacity = 0
         }
 
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(Metrics.sortSlideOutMilliseconds))
-            sortMode = targetMode
-            appSortSlideOffset = incomingOffset
+            updateContent()
+            collapsedSlideOffset = incomingOffset
 
             withAnimation(.easeOut(duration: Metrics.sortSlideInDuration)) {
-                appSortSlideOffset = 0
-                appSortSlideOpacity = 1
+                collapsedSlideOffset = .zero
+                collapsedSlideOpacity = 1
             }
 
             try? await Task.sleep(for: .milliseconds(Int(Metrics.sortSlideInDuration * 1000)))
-            isAppSortSliding = false
+            isCollapsedSliding = false
             isCollapsedHoverSuppressed = false
         }
     }

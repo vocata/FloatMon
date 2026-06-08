@@ -1,8 +1,18 @@
 import AppKit
 
 enum AgentIconResolver {
+    private static var cachedIcons: [AgentProvider: NSImage] = [:]
+
     static func icon(for provider: AgentProvider) -> NSImage? {
-        image(named: provider.rawValue, extension: "icns")
+        if let cachedIcon = cachedIcons[provider] {
+            return cachedIcon
+        }
+
+        guard let icon = image(named: provider.rawValue, extension: "icns") else {
+            return nil
+        }
+        cachedIcons[provider] = icon
+        return icon
     }
 
     private static func image(named name: String, extension pathExtension: String) -> NSImage? {
@@ -19,6 +29,7 @@ enum AgentIconResolver {
 
     private static func sourceAgentIconsDirectory() -> URL {
         URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
